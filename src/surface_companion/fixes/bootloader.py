@@ -6,7 +6,8 @@ import re
 from .. import sysfs
 from .base import Log, sh, write_managed, remove_managed, is_managed
 
-GRUB_DROPIN = "/etc/default/grub.d/50-surface-companion.cfg"
+GRUB_DROPIN = "/etc/default/grub.d/50-sdx-control-centre.cfg"
+LEGACY_GRUB_DROPIN = "/etc/default/grub.d/50-surface-companion.cfg"
 
 
 def in_use(arg: str) -> bool:
@@ -36,6 +37,7 @@ def add(arg: str, log: Log) -> None:
     elif m == "grubby":
         sh(["grubby", "--update-kernel=ALL", f"--args={arg}"], log)
     elif m == "grub-dropin":
+        remove_managed(LEGACY_GRUB_DROPIN)
         write_managed(GRUB_DROPIN, f'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT {arg}"\n')
         sh(["update-grub"], log)
     elif m == "grub-edit":
@@ -59,6 +61,7 @@ def remove(arg: str, log: Log) -> None:
         sh(["grubby", "--update-kernel=ALL", f"--remove-args={arg}"], log)
     elif m == "grub-dropin":
         remove_managed(GRUB_DROPIN)
+        remove_managed(LEGACY_GRUB_DROPIN)
         sh(["update-grub"], log)
     elif m == "grub-edit":
         path = "/etc/default/grub"

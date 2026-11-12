@@ -11,11 +11,14 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication
 
+# SDX Control Centre logo URL from GitHub profile
+LOGO_URL = "https://github.com/NexGen-3D-Printing/sdx-control-centre/raw/main/docs/assets/logo.png"
+
 LIGHT = dict(bg="#f3f4f6", surface="#ffffff", border="#dcdfe4", text="#1b1d21", muted="#5d6470",
-             accent="#0f6cbd", accent_text="#ffffff", sidebar="#e9ebef", hover="#e1e5eb",
+             accent="#7b1fa2", accent_text="#ffffff", sidebar="#e9ebef", hover="#e1e5eb",
              good="#16794a", warn="#a15c00", bad="#b3261e", track="#cfd4db")
 DARK = dict(bg="#1c1e22", surface="#262930", border="#383c45", text="#eceef2", muted="#a0a7b3",
-            accent="#4aa3ff", accent_text="#06121f", sidebar="#17191c", hover="#30343d",
+            accent="#b388ff", accent_text="#120b1f", sidebar="#17191c", hover="#30343d",
             good="#4cc38a", warn="#e5a542", bad="#ff7b72", track="#444955")
 
 _current = LIGHT
@@ -93,6 +96,9 @@ def stylesheet(c: dict) -> str:
     QPushButton#segl:checked, QPushButton#segr:checked {{ background: {c['accent']}; color: {c['accent_text']}; border-color: {c['accent']}; }}
     QPushButton#link {{ border: none; background: transparent; color: {c['accent']}; text-align: left; padding: 4px 2px; }}
     QPushButton#link:hover {{ text-decoration: underline; background: transparent; }}
+    QPushButton#portal {{ text-align: left; padding: 9px 12px; border: none; border-radius: 8px;
+                          background: {c['accent']}; color: {c['accent_text']}; }}
+    QPushButton#portal:hover {{ opacity: 0.9; }}
     QPushButton[tour="true"] {{ border: 2px solid {c['accent']}; }}
     QFrame#tourcard {{ background: {c['surface']}; border: 2px solid {c['accent']}; border-radius: 12px; }}
     QFrame#tourcard QLabel {{ background: transparent; }}
@@ -103,6 +109,15 @@ def stylesheet(c: dict) -> str:
     QFrame#riskbox {{ border: 2px solid {c['bad']}; border-radius: 10px; background: {c['surface']}; }}
     QFrame#riskbox QLabel {{ background: transparent; }}
     QCheckBox {{ spacing: 8px; }}
+    QCheckBox::indicator {{ width: 18px; height: 18px; border-radius: 4px; border: 1px solid {c['border']}; background: {c['surface']}; }}
+    QCheckBox::indicator:checked {{ background: {c['accent']}; border-color: {c['accent']}; }}
+    QCheckBox::indicator:disabled {{ background: {c['track']}; border-color: {c['track']}; }}
+
+    QRadioButton {{ spacing: 8px; }}
+    QRadioButton::indicator {{ width: 18px; height: 18px; border-radius: 9px; border: 1px solid {c['border']}; background: {c['surface']}; }}
+    QRadioButton::indicator:checked {{ background: {c['accent']}; border-color: {c['accent']}; }}
+    QRadioButton::indicator:disabled {{ background: {c['track']}; border-color: {c['track']}; }}
+
     QPushButton#danger {{ color: {c['bad']}; }}
     QPushButton#choice {{ text-align: left; padding: 12px 14px; border-radius: 10px; }}
     QPushButton#choice:checked {{ border: 2px solid {c['accent']}; background: {c['surface']}; }}
@@ -113,13 +128,45 @@ def stylesheet(c: dict) -> str:
                                   width: 16px; height: 16px; margin: -7px 0; border-radius: 9px; }}
     QSlider::handle:horizontal:hover {{ background: {c['hover']}; }}
 
+    QProgressBar {{ border: 1px solid {c['border']}; border-radius: 6px; background: {c['track']}; text-align: center; }}
+    QProgressBar::chunk {{ background: {c['accent']}; border-radius: 6px; }}
+
     QComboBox {{ padding: 6px 10px; border-radius: 8px; border: 1px solid {c['border']}; background: {c['surface']}; }}
     QComboBox QAbstractItemView {{ background: {c['surface']}; selection-background-color: {c['accent']};
                                    selection-color: {c['accent_text']}; border: 1px solid {c['border']}; }}
+    QComboBox:disabled {{ color: {c['muted']}; }}
+    QComboBox:focus {{ border: 1px solid {c['accent']}; }}
+
+    QSpinBox, QDoubleSpinBox, QLineEdit {{ padding: 6px 10px; border-radius: 8px; border: 1px solid {c['border']}; background: {c['surface']}; }}
+    QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {{ border: 1px solid {c['accent']}; }}
+
+    QTabWidget::pane {{ border: 1px solid {c['border']}; border-radius: 8px; }}
+    QTabBar::tab {{ padding: 8px 14px; background: {c['sidebar']}; border: 1px solid {c['border']}; border-bottom: none; }}
+    QTabBar::tab:selected {{ background: {c['surface']}; border-bottom: 2px solid {c['accent']}; }}
+    QTabBar::tab:hover {{ background: {c['hover']}; }}
+
+    QMenu {{ background: {c['surface']}; border: 1px solid {c['border']}; }}
+    QMenu::item:selected {{ background: {c['hover']}; }}
+
     QPlainTextEdit {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 8px;
                       font-family: monospace; padding: 6px; }}
-    QScrollBar:vertical {{ width: 10px; background: transparent; }}
-    QScrollBar::handle:vertical {{ background: {c['track']}; border-radius: 5px; min-height: 30px; }}
-    QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+    QScrollBar:vertical {{ width: 8px; background: transparent; margin: 0px; }}
+    QScrollBar::handle:vertical {{ background: rgba(150, 150, 150, 0.25); border-radius: 4px; min-height: 30px; margin: 2px; }}
+    QScrollBar::handle:vertical:hover {{ background: rgba(150, 150, 150, 0.55); }}
+    QScrollBar::handle:vertical:pressed {{ background: {c['accent']}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; width: 0; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+    QScrollBar:horizontal {{ height: 8px; background: transparent; margin: 0px; }}
+    QScrollBar::handle:horizontal {{ background: rgba(150, 150, 150, 0.25); border-radius: 4px; min-width: 30px; margin: 2px; }}
+    QScrollBar::handle:horizontal:hover {{ background: rgba(150, 150, 150, 0.55); }}
+    QScrollBar::handle:horizontal:pressed {{ background: {c['accent']}; }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ height: 0; width: 0; }}
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
     QToolTip {{ background: {c['surface']}; color: {c['text']}; border: 1px solid {c['border']}; padding: 4px; }}
+
+    QLabel[tone="good"] {{ color: {c['good']}; }}
+    QLabel[tone="warn"] {{ color: {c['warn']}; }}
+    QLabel[tone="bad"] {{ color: {c['bad']}; }}
+    QLabel[tone="accent"] {{ color: {c['accent']}; }}
+    QLabel[tone="muted"] {{ color: {c['muted']}; }}
     """

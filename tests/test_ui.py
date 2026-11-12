@@ -544,7 +544,7 @@ def test_system_test_page_runs_checks_and_builds_a_report(root, monkeypatch):
     page.hands_results["keyboard"] = {"id": "hw-keyboard", "title": "Keyboard", "status": "ok", "detail": "70 of 70 keys",
                                       "hint": "", "goto": None}
     rep = page.report()
-    assert "Surface Companion system test" in rep and "[PASS] Keyboard: 70 of 70 keys" in rep and "Device:" in rep
+    assert "SDX Control Centre system test" in rep and "[PASS] Keyboard: 70 of 70 keys" in rep and "Device:" in rep
     w.close()
 
 

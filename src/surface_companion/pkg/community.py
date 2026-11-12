@@ -155,7 +155,7 @@ def fetch(d: Driver, cache_root: Path, log: Log) -> Path:
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
     log(f"Downloading {d.tarball}")
-    req = urllib.request.Request(d.tarball, headers={"User-Agent": "surface-companion"})
+    req = urllib.request.Request(d.tarball, headers={"User-Agent": "sdx-control-centre"})
     h = hashlib.sha256()
     tgz = dest / "snapshot.tar.gz"
     size = 0

@@ -1,8 +1,8 @@
 """D-Bus front end for the privileged daemon (Gio only, no extra dependencies).
 
-Bus name:  org.surfacecompanion.Daemon
-Object:    /org/surfacecompanion/Daemon
-Interface: org.surfacecompanion.Daemon1
+Bus name:  org.sdxcontrolcentre.Daemon
+Object:    /org/sdxcontrolcentre/Daemon
+Interface: org.sdxcontrolcentre.Daemon1
   Call(action, json_args) -> json_result
   signals: JobOutput(job, line), JobFinished(job, ok, message), StateChanged()
 Authorisation is checked per call through polkit.
@@ -23,9 +23,9 @@ from gi.repository import Gio, GLib  # noqa: E402
 
 from .. import actions  # noqa: E402
 
-NAME = "org.surfacecompanion.Daemon"
-PATH = "/org/surfacecompanion/Daemon"
-IFACE = "org.surfacecompanion.Daemon1"
+NAME = "org.sdxcontrolcentre.Daemon"
+PATH = "/org/sdxcontrolcentre/Daemon"
+IFACE = "org.sdxcontrolcentre.Daemon1"
 XML = f"""
 <node>
   <interface name="{IFACE}">
@@ -81,7 +81,7 @@ class Daemon:
                 raise ValueError(f"Unknown action: {name}")
             args = json.loads(raw) if raw else {}
             if not self.authorised(sender, act.polkit):
-                invocation.return_dbus_error("org.surfacecompanion.Error.NotAuthorized", "Not authorised")
+                invocation.return_dbus_error("org.sdxcontrolcentre.Error.NotAuthorized", "Not authorised")
                 return
             if act.job:
                 job = uuid.uuid4().hex[:8]
@@ -95,7 +95,7 @@ class Daemon:
                 sys.stderr.write(traceback.format_exc())   # unexpected: keep the details for bug reports
             else:
                 sys.stderr.write(f"{name}: {e}\n")
-            invocation.return_dbus_error("org.surfacecompanion.Error.Failed", str(e) or e.__class__.__name__)
+            invocation.return_dbus_error("org.sdxcontrolcentre.Error.Failed", str(e) or e.__class__.__name__)
 
     def _emit(self, signal: str, fmt: str, values: tuple):
         self.conn.emit_signal(None, PATH, IFACE, signal, GLib.Variant(fmt, values))
@@ -128,7 +128,7 @@ class Daemon:
 
         def bus_acquired(conn, name):
             self.conn = conn
-            conn.register_object(PATH, info, self.on_call, lambda *a: GLib.Variant("s", "0.3.0"), None)
+            conn.register_object(PATH, info, self.on_call, lambda *a: GLib.Variant("s", "1.0.1"), None)
             if self.bus_type == Gio.BusType.SYSTEM:
                 conn.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep",
                                       "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE, self.on_login1)
@@ -148,7 +148,7 @@ class Daemon:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="surface-companiond")
+    ap = argparse.ArgumentParser(prog="sdx-control-centred")
     ap.add_argument("--session", action="store_true", help="use the session bus (development)")
     ap.add_argument("--insecure-no-auth", action="store_true", help="skip polkit (development only)")
     a = ap.parse_args(argv)

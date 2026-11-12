@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QM
                              QVBoxLayout, QWidget)
 
 from . import icons, theme
-from .widgets import LogView, button, label
+from .widgets import enable_overlay_scrollbar, LogView, button, label
 
 
 class JobDialog(QDialog):
@@ -111,6 +111,7 @@ class RiskDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        enable_overlay_scrollbar(scroll)
         scroll.setWidget(box)
         scroll.setMinimumHeight(min(320, 60 + 44 * len(risks)))
         lay.addWidget(scroll, 1)

@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication
 
 from . import theme
@@ -13,22 +13,23 @@ from .main import MainWindow
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="surface-companion")
+    ap = argparse.ArgumentParser(prog="sdx-control-centre")
     ap.add_argument("--session-bus", action="store_true", help="talk to a daemon on the session bus (development)")
     ap.add_argument("--hidden", action="store_true", help="start in the tray without showing the window")
     a, qt_args = ap.parse_known_args(argv)
     app = QApplication([sys.argv[0], *qt_args])
-    app.setApplicationName("Surface Companion")
-    app.setDesktopFileName("surface-companion")
+    app.setApplicationName("SDX Control Centre")
+    app.setDesktopFileName("sdx-control-centre")
     app.setQuitOnLastWindowClosed(False)
     theme.apply(app)
     win = MainWindow(Backend(session_bus=a.session_bus))
+    win.setWindowFlags(Qt.WindowType.FramelessWindowHint)
     if hasattr(app.styleHints(), "colorSchemeChanged"):
         app.styleHints().colorSchemeChanged.connect(lambda _: (theme.apply(app), win.restyle()))
     app.setQuitOnLastWindowClosed(win.tray is None)
     if not (a.hidden and win.tray):
-        win.show()
-    if not os.environ.get("SC_SKIP_WELCOME"):
+        win.showMaximized()
+    if not (os.environ.get("SDX_SKIP_WELCOME") or os.environ.get("SC_SKIP_WELCOME")):
         QTimer.singleShot(600, win.maybe_first_run)
     return app.exec()
 

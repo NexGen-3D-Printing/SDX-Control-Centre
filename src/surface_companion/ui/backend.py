@@ -9,9 +9,9 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 from PyQt6.QtDBus import QDBus, QDBusConnection, QDBusMessage
 
-NAME = "org.surfacecompanion.Daemon"
-PATH = "/org/surfacecompanion/Daemon"
-IFACE = "org.surfacecompanion.Daemon1"
+NAME = "org.sdxcontrolcentre.Daemon"
+PATH = "/org/sdxcontrolcentre/Daemon"
+IFACE = "org.sdxcontrolcentre.Daemon1"
 
 
 class NoDaemon(Exception):
@@ -32,7 +32,7 @@ class _Task(QRunnable):
         try:
             res, ok = self.fn(), True
         except Exception as e:  # noqa: BLE001 - surfaced to the UI
-            if os.environ.get("SC_DEBUG"):
+            if os.environ.get("SDX_DEBUG") or os.environ.get("SC_DEBUG"):
                 traceback.print_exc()
             res, ok = str(e) or e.__class__.__name__, False
         try:
@@ -125,9 +125,9 @@ class Backend(QObject):
         if act is None:
             raise ValueError(f"Unknown action: {action}")
         if act.polkit or act.job:
-            raise RuntimeError("The Surface Companion background service is not running, so changes can't be "
+            raise RuntimeError("The SDX Control Centre background service is not running, so changes can't be "
                                "made. Install it with the installer, or start it with: "
-                               "sudo systemctl start surface-companion")
+                               "sudo systemctl start sdx-control-centre")
         return act.fn(args)
 
     def _submit(self, fn, ok, err) -> None:

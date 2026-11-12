@@ -74,6 +74,15 @@ def detect() -> Distro:
     d.tumbleweed = d.family == "suse" and "tumbleweed" in (d.id + " " + d.name).lower()
     d.immutable = sysfs.p("/run/ostree-booted").exists()
     d.initramfs = detect_initramfs()
+    
+    # Detect if running under Bazzite
+    if kv.get("ID") == "bazzite" or "bazzite" in (kv.get("NAME", "") + kv.get("VERSION", "")).lower():
+        d.bazzite = True
+        d.bazzite_flavor = kv.get("VARIANT_ID", "").lower().replace("bazzite-", "")
+    else:
+        d.bazzite = False
+        d.bazzite_flavor = ""
+    
     return d
 
 

@@ -14,9 +14,9 @@ import subprocess
 from ..pkg import community, nvidia as nvidia_mod
 from .dialogs import JobDialog, confirm, confirm_risk, notify
 from .welcome import Tour, WelcomeWizard
-from .pages import (BookPage, CameraPage, DisplayPage, FixesPage, OverviewPage, PenPage, PerformancePage,
+from .pages import (BookPage, CameraPage, DisplayPage, FixesPage, LinksPage, OverviewPage, PenPage, PerformancePage,
                     PowerPage, SoftwarePage, TestPage)
-from .widgets import label
+from .widgets import (Banner, Card, ChoiceGroup, Pill, Row, SliderRow, Sparkline, Toggle, button, label, separator)
 
 POLL_MS = 2500
 
@@ -30,11 +30,12 @@ class MainWindow(QMainWindow):
         self.updates: list = []
         self.history: dict[str, deque] = defaultdict(lambda: deque(maxlen=120))   # ~5 minutes of samples
         self.distro_name = ""
+        self.app_name = "SDX Control Centre"
         self.advanced = bool(prefs.get("advanced", False))
         self.brightness_system = bool(prefs.get("brightness_system", False))
         self._reminded = False
         self._modal: list = []             # (widget, advanced_only, simple_only)
-        self.setWindowTitle("Surface Companion")
+        self.setWindowTitle("SDX Control Centre")
         self.setWindowIcon(icons.app_icon())
         self.resize(1000, 700)
         self.setMinimumSize(760, 520)
@@ -51,7 +52,7 @@ class MainWindow(QMainWindow):
         sl = QVBoxLayout(self.sidebar)
         sl.setContentsMargins(10, 14, 10, 12)
         sl.setSpacing(2)
-        sl.addWidget(label("Surface Companion", "h2"))
+        sl.addWidget(label("SDX Control Centre", "h2"))
         sl.addSpacing(10)
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
@@ -61,7 +62,7 @@ class MainWindow(QMainWindow):
         specs = [("overview", "home", OverviewPage), ("display", "display", DisplayPage),
                  ("performance", "performance", PerformancePage), ("sleep", "sleep", PowerPage),
                  ("book", "book", BookPage), ("pen", "pen", PenPage), ("camera", "camera", CameraPage),
-                 ("fixes", "fixes", FixesPage), ("test", "test", TestPage),
+                 ("fixes", "fixes", FixesPage), ("links", "link", LinksPage), ("test", "test", TestPage),
                  ("software", "software", SoftwarePage)]
         self.icon_names = {}
         for key, icon, cls in specs:
@@ -104,11 +105,26 @@ class MainWindow(QMainWindow):
         help_menu.addAction("Run setup again", self.run_welcome)
         help_menu.addAction("Take the tour", self.start_tour)
         self.help_btn.clicked.connect(lambda: help_menu.exec(self.help_btn.mapToGlobal(self.help_btn.rect().topRight())))
+        self.help_btn.clicked.connect(lambda: help_menu.exec(self.help_btn.mapToGlobal(self.help_btn.rect().topRight())))
         sl.addWidget(self.help_btn)
+        
         self.status = QLabel("")
         self.status.setObjectName("muted")
         self.status.setWordWrap(True)
         sl.addWidget(self.status)
+        
+        # Donations and links section
+        sl.addWidget(separator())
+        sl.addWidget(label("Support", "h2"))
+        
+        # Ko-Fi donate button
+        kofi_btn = button("Support My Work", "link", lambda: self.open_url("https://ko-fi.com/nexgen3d"))
+        sl.addWidget(kofi_btn)
+        
+        # Bazzite donate button
+        bazzite_btn = button("Support Bazzite", "link", lambda: self.open_url("https://ko-fi.com/universalblue"))
+        sl.addWidget(bazzite_btn)
+        
         outer.addWidget(self.sidebar)
 
         right = QVBoxLayout()
@@ -134,6 +150,8 @@ class MainWindow(QMainWindow):
         self.goto("overview")
         self.refresh()
         self.backend.call("get_software", ok=self._got_software, err=lambda m: None)
+        # Get fastfetch system info
+        self.fastfetch_info = self.get_system_info()
         self._tray()
 
     # -- theming
@@ -154,10 +172,10 @@ class MainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
         self.tray = QSystemTrayIcon(icons.app_icon(), self)
-        self.tray.setToolTip("Surface Companion")
+        self.tray.setToolTip("SDX Control Centre")
         self.tray_menu = QMenu()
         self.tray.setContextMenu(self.tray_menu)
-        self.tray.activated.connect(lambda r: self.showNormal() or self.activateWindow()
+        self.tray.activated.connect(lambda r: (self.showMaximized(), self.activateWindow(), self.raise_())
                                     if r == QSystemTrayIcon.ActivationReason.Trigger else None)
         self._tray_profiles = ()
         self.tray.show()
@@ -168,7 +186,7 @@ class MainWindow(QMainWindow):
         th = self.state["thermal"]
         bits = [f"{t['label']} {t['celsius']:.0f} °C" for t in th["temps"][:1]]
         bits += [f"{f['rpm']} RPM" for f in th["fans"][:1]]
-        self.tray.setToolTip("Surface Companion" + ("\n" + " · ".join(bits) if bits else ""))
+        self.tray.setToolTip("SDX Control Centre" + ("\n" + " · ".join(bits) if bits else ""))
         perf = self.state["performance"]
         ids = tuple(c["id"] for c in perf.get("choices", [])) if perf.get("available") else ()
         if ids != self._tray_profiles:
@@ -182,13 +200,38 @@ class MainWindow(QMainWindow):
                 a.setData(c["id"])
                 self.tray_menu.addAction(a)
             self.tray_menu.addSeparator()
-            self.tray_menu.addAction("Open Surface Companion", lambda: (self.showNormal(), self.activateWindow()))
+            self.tray_menu.addAction("Open SDX Control Centre", lambda: (self.showNormal(), self.activateWindow()))
             self.tray_menu.addAction("Quit", self.close_for_real)
         ovs = self.state.get("overrides") or {}
         for a in self.tray_menu.actions():
             if a.data():
                 a.setChecked(not ovs.get("auto_profile") and
                              a.data() == (perf.get("current") if ovs.get("profile") else "system"))
+
+    def get_system_info(self) -> dict:
+        """Get system information using fastfetch."""
+        import subprocess
+        import json
+        try:
+            result = subprocess.run(["fastfetch", "-j"], capture_output=True, text=True, timeout=5)
+            data = json.loads(result.stdout)
+            info = {}
+            for item in data:
+                if item["type"] == "OS":
+                    info["os"] = item.get("result", {})
+                elif item["type"] == "Host":
+                    info["host"] = item.get("result", {})
+                elif item["type"] == "Kernel":
+                    info["kernel"] = item.get("result", {})
+                elif item["type"] == "DE":
+                    info["de"] = item.get("result", {})
+                elif item["type"] == "Display":
+                    displays = item.get("result", [])
+                    if displays:
+                        info["display"] = displays[0]  # Primary display
+            return info
+        except Exception as e:
+            return {}
 
     def close_for_real(self):
         self.tray = None
@@ -235,6 +278,11 @@ class MainWindow(QMainWindow):
             self.tray.showMessage(title, text, icons.app_icon(), 15000)
         else:
             self.toast(f"{title}: {text}")
+
+    def open_url(self, url: str):
+        """Open a URL in the default browser."""
+        import subprocess
+        subprocess.Popen(["xdg-open", url])
 
     def _check_charge_reminder(self, st: dict):
         bat = st.get("battery") or {}

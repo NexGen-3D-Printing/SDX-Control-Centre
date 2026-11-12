@@ -1,10 +1,10 @@
 """Small reusable widgets shared by the pages."""
 from __future__ import annotations
 
-from PyQt6.QtCore import QPropertyAnimation, QRectF, Qt, pyqtProperty, pyqtSignal, QEasingCurve, QTimer
+from PyQt6.QtCore import QEvent, QObject, QPropertyAnimation, QRectF, Qt, pyqtProperty, pyqtSignal, QEasingCurve, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (QAbstractButton, QButtonGroup, QFrame, QHBoxLayout, QLabel, QPlainTextEdit,
-                             QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget)
+                             QPushButton, QScroller, QSizePolicy, QSlider, QVBoxLayout, QWidget)
 
 from . import theme
 
@@ -306,3 +306,91 @@ class Sparkline(QWidget):
         col = QColor(c.get(self.color, c["accent"]))
         p.setPen(QPen(col, 1.8))
         p.drawPath(path)
+
+class _OverlayScrollFilter(QObject):
+    """Event filter that auto-hides scrollbars like overlay scrollbars (Chrome-style)."""
+
+    def __init__(self, scroll, parent=None):
+        super().__init__(parent or scroll)
+        self.scroll = scroll
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(1200)
+        self._hide_timer.timeout.connect(self._hide)
+        self._visible = False
+        self._over_bar = False
+        self._apply(False)
+        # Track scroll activity
+        for bar in (scroll.verticalScrollBar(), scroll.horizontalScrollBar()):
+            bar.valueChanged.connect(lambda _=0: self._activity())
+            bar.installEventFilter(self)
+            bar.sliderPressed.connect(self._show)
+            bar.sliderReleased.connect(self._maybe_schedule_hide)
+        scroll.viewport().installEventFilter(self)
+        scroll.installEventFilter(self)
+
+    def _apply(self, show: bool):
+        self._visible = show
+        # Use transparent handle when hidden; theme provides visible style otherwise
+        if show:
+            style = ""
+        else:
+            style = (
+                "QScrollBar:vertical{width:8px;background:transparent;margin:0;}"
+                "QScrollBar::handle:vertical{background:rgba(0,0,0,0);border-radius:4px;min-height:30px;}"
+                "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;width:0;}"
+                "QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{background:transparent;}"
+                "QScrollBar:horizontal{height:8px;background:transparent;margin:0;}"
+                "QScrollBar::handle:horizontal{background:rgba(0,0,0,0);border-radius:4px;min-width:30px;}"
+                "QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{height:0;width:0;}"
+                "QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{background:transparent;}"
+            )
+        self.scroll.setStyleSheet(style)
+
+    def _show(self):
+        self._hide_timer.stop()
+        if not self._visible:
+            self._apply(True)
+
+    def _hide(self):
+        if not self._over_bar:
+            self._apply(False)
+
+    def _activity(self):
+        self._show()
+        self._maybe_schedule_hide()
+
+    def _maybe_schedule_hide(self):
+        self._hide_timer.stop()
+        if not self._over_bar and not self.scroll.underMouse():
+            self._hide_timer.start(1200)
+        elif not self._over_bar:
+            self._hide_timer.start(1200)
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et in (QEvent.Type.Enter, QEvent.Type.HoverEnter, QEvent.Type.MouseMove, QEvent.Type.Wheel):
+            if obj in (self.scroll, self.scroll.viewport()):
+                self._activity()
+            elif obj in (self.scroll.verticalScrollBar(), self.scroll.horizontalScrollBar()):
+                self._over_bar = True
+                self._show()
+        elif et in (QEvent.Type.Leave, QEvent.Type.HoverLeave):
+            if obj in (self.scroll.verticalScrollBar(), self.scroll.horizontalScrollBar()):
+                self._over_bar = False
+                self._maybe_schedule_hide()
+            elif obj in (self.scroll, self.scroll.viewport()):
+                self._maybe_schedule_hide()
+        return super().eventFilter(obj, event)
+
+
+def enable_overlay_scrollbar(scroll):
+    """Enable Chrome-like overlay auto-hide scrollbars and touch scrolling on a QScrollArea."""
+    # Touch / kinetic scrolling: single-finger drag scrolls on touchscreens
+    vp = scroll.viewport()
+    vp.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+    QScroller.grabGesture(vp, QScroller.ScrollerGestureType.TouchGesture)
+    # Keep filter alive on the scroll area
+    f = _OverlayScrollFilter(scroll, scroll)
+    scroll._overlay_scroll_filter = f
+    return scroll

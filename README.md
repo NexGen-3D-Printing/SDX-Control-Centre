@@ -1,129 +1,138 @@
-# Surface Companion
+# SDX Control Centre
 
-> Unofficial community project. It is not made by, endorsed by or affiliated with the linux-surface maintainers or
-> Microsoft. It builds on their published packages and documentation.
+> SDX Control Centre is a system management application for Bazzite-DX Surface Development Edition. This fork of the original Surface Companion project is integrated into the Bazzite-SDX image build process as a supporting package.
 
-One app to control, fix and keep up to date a Microsoft Surface running Linux. It builds on the
-[linux-surface](https://github.com/linux-surface/linux-surface) project and works on any desktop
-(GNOME, KDE, XFCE, Cinnamon, ...): the window draws itself the same everywhere and follows your light/dark setting.
+**Built on the shoulders of giants.** SDX Control Centre is a fork of Lane "Madmaxx636" [surface-companion](https://github.com/Madmaxx636/surface-companion). We extend our deepest gratitude to Madmaxx636 for creating and maintaining the original Surface Companion project, which has enabled this fork to exist. Thank you for your contribution to the Surface Linux community!
 
-![Overview in Advanced view, with live temperatures and clock speeds](docs/screenshots/overview-advanced.png)
+![SDX Control Centre Overview](docs/screenshots/overview-advanced.png)
 
-| | |
-|---|---|
-| ![First-run scan results](docs/screenshots/setup-results.png) | ![Fixes for your model](docs/screenshots/fixes.png) |
+## Project Status
 
-## What it does
+**SDX Control Centre** is a supporting software package for **Bazzite-SDX**. This fork of the original Surface Companion project is built as an RPM package that gets imported into the Bazzite-SDX image build process.
 
-| Area | What you can do |
-|---|---|
-| Display & keyboard | Screen brightness, keyboard backlight |
-| Performance & thermals | Surface power profile (Battery Saver / Recommended / Better / Best); live temperatures, fan speed and CPU throttling with a few minutes of history; every sensor on request |
-| Power & sleep | Sleep mode (modern standby or deep), lid action, lid wake, charge limit, battery health, sleep/hibernate now |
-| Touch & pen | Detect touchscreen and pen, restart `iptsd`, install touch support |
-| Cameras | Which camera hardware you have, whether drivers, firmware and libcamera are in place, install camera support, and (behind a warning) community camera drivers |
-| Surface Book | Detach the screen, see tablet/laptop/studio mode, discrete GPU power, install NVIDIA's driver (DKMS, with a Secure Boot terminal route) |
-| Fixes | Known workarounds from the linux-surface wiki, only the ones that apply to your model, each undoable |
-| System test | 18 read-only health checks, hands-on tests (keyboard, mouse/touchpad/touch, speakers, ports, camera, Surface Book detach or Type Cover), a CPU stress test with a heat cut-off, and a copyable report |
-| Software & updates | Add the linux-surface repository, install the kernel and drivers, check for and apply updates |
+### Relationship to Bazzite-SDX
 
-A tray icon gives one-click performance profile switching.
+- **Bazzite-SDX** is the base image: `ghcr.io/nexgen-3d-printing/bazzite-sdx`
+- **SDX Control Centre** is a supporting package: `sdx-control-centre` RPM
+- The RPM is built, tested, and included in Bazzite-SDX image releases
 
-**First run.** The app scans your Surface, shows what it found (hardware, kernel running/installed/available, fixes that
-apply), offers to set things up, and gives a short guided tour. Reopen it from "Setup and tour..." at the bottom left.
+## What is SDX Control Centre?
 
-**You stay in charge of what the app controls.** Every override has a "System" choice (performance profile, sleep,
-brightness, charge limit, GPU power) that hands control back to your desktop and firmware.
+SDX Control Centre is an application for managing Microsoft Surface devices on Bazzite-DX. It provides:
 
-**Simple and Advanced.** Simple shows the essentials. Advanced adds live CPU, graphics and memory clocks, history
-graphs, every sensor, technical rows, community drivers and all fixes.
+- **Display & Keyboard**: Screen brightness, keyboard backlight control
+- **Performance & Thermals**: Power profiles, live temperatures, fan speed monitoring
+- **Power & Sleep**: Sleep mode, lid action, charge limit, battery health
+- **System Diagnostics**: Health checks, hands-on tests, support bundles
 
-### What it cannot do
+## What's New in This Fork
 
-- **Fan curve.** Surface fans are run by the embedded controller. Linux can read fan speed on some models but there
-  is no interface to change the curve. The performance profile is the real lever, and `thermald` can shape CPU
-  throttling (see Fixes).
-- **Install everywhere.** Debian/Ubuntu, Fedora and Arch families are supported. Anything else is either installed
-  behind a full-screen warning (see below) or refused with the reason.
+This is a modified version of the original Surface Companion project, specifically tailored for Bazzite-DX:
 
-## Unsupported systems and community drivers: at your own risk
+- **GPLv3 License**: Upgraded from MIT to GPLv3 for better alignment with Bazzite ecosystem
+- **Australian Spelling**: "Centre" instead of "Center" (for our Australian users)
+- **rpm-ostree Optimization**: Special handling for Bazzite's image-based updates
+- **SDX Links Sidebar**: Quick access to related Bazzite SDX projects
+- **Enhanced Overview**: More detailed device information (CPU, RAM, kernel)
+- **App Renamed**: Surface Companion → SDX Control Centre
 
-Two things are allowed but never quietly. Each one opens a red warning that lists what can go wrong, has a
-"Show what will run" section, and keeps the action button disabled until you tick "I understand the risks".
-Cancel is the default button.
+## Installation
 
-**Installing on a system linux-surface does not support**
+### In Bazzite-SDX Images
 
-| System | What happens |
-|---|---|
-| Distribution not recognised, but apt/dnf/pacman/zypper exists | The matching family's instructions are tried |
-| Image-based Fedora (Silverblue, Bazzite, ...) | The wiki's `rpm-ostree override` recipe; undo with `rpm-ostree rollback` |
-| openSUSE Tumbleweed | The wiki's community repository (one volunteer's build, trusts its key automatically); kernel and distro packages only |
-| Not x86-64, openSUSE Leap, or no supported package manager | Refused, with the reason |
+SDX Control Centre is included as an RPM package in Bazzite-SDX images. No manual installation needed.
 
-**Community drivers** (only the ones for your exact model are listed, on the Cameras page)
+### Building the RPM
 
-| Driver | Model | How it runs |
-|---|---|---|
-| [surface-kamera-treiber](https://github.com/EberhartLeberhart/surface-kamera-treiber) | Surface Pro 5 | The author's installer opens in a terminal and runs as you (it uses sudo itself) |
-| [surface-ipu6-cameras](https://github.com/dmanresa-saes/surface-ipu6-cameras) | Surface Pro 7+ | The three DKMS kernel modules are built by the service. The rest of that project's pipeline is a manual playbook and is not installed |
-
-Each driver is pinned to one exact commit. The app downloads that commit's tarball (never a moving branch), records
-its SHA-256, and rejects archive path tricks. The service only installs drivers from this built-in list and only on
-the matching model, even if something else asks it to.
-
-## Install
-
-Debian, Ubuntu and derivatives: build and install the package.
+For development or testing:
 
 ```bash
-./packaging/build-deb.sh
+# Enter distrobox container
+distrobox enter Fedora-45
+
+# Set up build directories
+mkdir -p ~/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+echo '%_topdir /home/NexGen3D/rpmbuild' > ~/.rpmmacros
+
+# Clone source to SOURCES
+cd /home/NexGen3D
+git clone https://github.com/NexGen-3D-Printing/sdx-control-centre.git
+cd sdx-control-centre
+cp -r SDX-Control-Centre /home/NexGen3D/rpmbuild/SOURCES/
+
+# Create tarball and build
+cd /home/NexGen3D/rpmbuild/SOURCES
+tar czf sdx-control-centre-1.0.1.tar.gz SDX-Control-Centre
+rpmbuild -ba /home/NexGen3D/rpmbuild/SPECS/SDX-Control-Centre.spec
 ```
 
-```bash
-sudo apt install ./dist/surface-companion_0.1.0_all.deb
-```
+The built RPM will be at `~/rpmbuild/RPMS/noarch/sdx-control-centre-*.rpm`
 
-Any distribution: the install script.
+## Dependencies
 
-```bash
-sudo ./install.sh
-```
+- Python 3.10+
+- PyQt6
+- PyGObject
+- polkit
+- systemd
 
-Needs Python 3, PyGObject, PyQt6 and polkit; the script installs them with apt, dnf, pacman or zypper unless you pass
-`--no-deps`. `sudo ./install.sh --uninstall` removes it.
+## Credits
 
-## How it works
+### Original Project
 
-```
-surface-companion  (your user, PyQt6)  --D-Bus-->  surface-companiond  (root, systemd service)
-                                                     |-- sysfs / ioctl for hardware
-                                                     |-- package manager for installs
-                                                     `-- polkit checks every change
-```
+- **Surface Companion** by [Madmaxx636](https://github.com/Madmaxx636/surface-companion)
+- Thank you for creating and maintaining this essential tool for Surface Linux users!
 
-- Changing brightness, profile, sleep settings or detaching: allowed for the person sitting at the machine.
-- Installing software and applying fixes: asks for an administrator password (polkit `auth_admin_keep`).
-- The service re-applies your performance profile and sleep mode after resume, because firmware tends to reset them.
-- Every fix writes only files it created (marked "Managed by Surface Companion"), refuses to overwrite yours, and can
-  be undone. Software installs show the exact commands before they run. The repository signing key is checked against
-  the published fingerprint before it is trusted.
+### Bazzite-SDX Integration
 
-## Development
+- Built on the [linux-surface](https://github.com/linux-surface/linux-surface) kernel stack
+- Integrated into [Bazzite-SDX](https://github.com/NexGen-3D-Printing/bazzite-sdx) image builds
 
-```bash
-python3 -m pytest tests                       # unit tests run against a fake sysfs tree
-PYTHONPATH=src python3 -m surface_companion   # run the UI (read-only without the service)
+## License
 
-# run the service on the session bus without root or polkit, against real hardware reads:
-PYTHONPATH=src python3 -m surface_companion.daemon.service --session --insecure-no-auth &
-PYTHONPATH=src python3 -m surface_companion --session-bus
-```
+GPLv3 - See [LICENSE](LICENSE) for details.
 
-`SC_SYSFS_ROOT` points everything at a fake tree; `SC_THEME=dark|light` forces a theme.
+This project is a fork of [Surface Companion](https://github.com/Madmaxx636/surface-companion), which is MIT licensed. Significant modifications have been made for Bazzite-DX compatibility, resulting in the GPLv3 license.
 
-## Sources
+## Contributing
 
-Fix and package details come from the linux-surface repository and wiki: Installation-and-Setup, Known-Issues-and-FAQ,
-Disk-Encryption, Camera-Support, Marvell-88W8897-quirks, Thermald-setup-and-configuration,
-Intel-12th-Generation-Devices-Issues and the per-model pages. Each fix links to its source.
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -s -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## Support & Connect
+
+### Donate to the Original Project
+
+If you appreciate the work that went into Surface Companion, please consider supporting its original creator:
+
+- **Madmaxx636**: [surface-companion on GitHub](https://github.com/Madmaxx636/surface-companion)
+
+### Donate to Bazzite-SDX & This Project
+
+If you find SDX Control Centre useful, you can support the ongoing development:
+
+- **NexGen-3D-Printing**: [ko-fi.com/nexgen3d](https://ko-fi.com/nexgen3d)
+- **Bazzite**: [ko-fi.com/universalblue](https://ko-fi.com/universalblue)
+
+### Social Media & Projects
+
+| Platform | Link |
+|----------|------|
+| GitHub | [github.com/NexGen-3D-Printing](https://github.com/NexGen-3D-Printing) |
+| YouTube | [youtube.com/@NexGen-3D](https://www.youtube.com/@NexGen-3D) |
+| Reddit | [reddit.com/user/NexGen-3D/](https://www.reddit.com/user/NexGen-3D/) |
+
+---
+
+**Built with ❤️ by NexGen-3D-Printing**
+
+*Making Linux work better for everyone, one device at a time.*
+
+A huge thank you to Madmaxx636 for creating the original Surface Companion project!

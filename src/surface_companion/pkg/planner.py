@@ -174,7 +174,7 @@ def assess(dev: Device, d: dist.Distro) -> dict:
 
 
 def _ostree_steps(ids: list[str], pkgs_by_id: dict[str, list[str]], plan: Plan) -> None:
-    rpm = "/var/tmp/surface-companion-kernel.rpm"
+    rpm = "/var/tmp/sdx-control-centre-kernel.rpm"
     plan.steps.append(Step("Add the linux-surface repository", "download", url=catalog.DNF_REPO,
                            path="/etc/yum.repos.d/linux-surface.repo"))
     if "kernel" in ids:
@@ -400,7 +400,7 @@ def latest_release() -> str | None:
     ver = None
     try:
         req = _rq.Request("https://api.github.com/repos/linux-surface/linux-surface/releases/latest",
-                          headers={"User-Agent": "surface-companion", "Accept": "application/vnd.github+json"})
+                          headers={"User-Agent": "sdx-control-centre", "Accept": "application/vnd.github+json"})
         with _rq.urlopen(req, timeout=5) as r:
             tag = _json.load(r).get("tag_name", "")
         m = re.match(r"^(?:arch|debian|fedora-\d+)-(.+)$", tag)
@@ -439,7 +439,26 @@ def check_updates(d: dist.Distro, refresh: bool = True) -> dict:
     out: list[dict] = []
     warnings: list[str] = []
     if d.immutable:
-        return {"updates": out, "warnings": ["Image-based system: run “rpm-ostree upgrade” to update."]}
+        # Check for rpm-ostree updates
+        r = sysfs.run(["rpm-ostree", "upgrade", "--check"], timeout=120)
+        if r.returncode == 0:
+            # No updates available
+            warnings.append("rpm-ostree is up to date")
+        elif r.returncode == 1:
+            # Updates available - parse the output to extract update info
+            import re as _re
+            for ln in r.stdout.splitlines():
+                m = _re.match(r"^(ostree .*?)\s+\S+\s+\S+\s+(.*?)\s+.*?(\d+\.\d+\.\d+)\s+.*?\((.*?)\)", ln)
+                if m:
+                    out.append({"name": "ostree", "installed": m.group(3), "available": "latest",
+                               "detail": m.group(4)})
+            if out:
+                warnings.append("Run 'rpm-ostree upgrade' to apply updates (requires reboot)")
+            else:
+                warnings.append("Image-based system: run \"rpm-ostree upgrade\" to update.")
+        else:
+            warnings.append("Image-based system: run \"rpm-ostree upgrade\" to update.")
+        return {"updates": out, "warnings": warnings}
     if d.family in ("debian", "fedora", "arch") and not repo_present(d):
         warnings.append("The linux-surface repository is not set up on this system, so newer Surface kernels and "
                         "drivers can't be seen. Set it up from the Software page first.")

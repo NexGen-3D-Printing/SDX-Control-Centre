@@ -33,8 +33,13 @@ def _systemctl(*args: str, log: Log, check: bool = True) -> None:
 
 # ------------------------------------------------------------------ encrypted-disk keyboard
 
-INITRAMFS_BEGIN = "# BEGIN surface-companion"
-INITRAMFS_END = "# END surface-companion"
+INITRAMFS_BEGIN = "# BEGIN sdx-control-centre"
+INITRAMFS_END = "# END sdx-control-centre"
+LEGACY_INITRAMFS_BEGIN = "# BEGIN surface-companion"
+LEGACY_INITRAMFS_END = "# END surface-companion"
+
+def _initramfs_markers():
+    return ((INITRAMFS_BEGIN, INITRAMFS_END), (LEGACY_INITRAMFS_BEGIN, LEGACY_INITRAMFS_END))
 
 
 def _initramfs_modules(ctx: Ctx) -> list[str]:
@@ -62,8 +67,10 @@ def _encrypted(ctx: Ctx) -> bool:
                for ln in (sysfs.read("/etc/crypttab", "") or "").splitlines())
 
 
-_DRACUT_CONF = "/etc/dracut.conf.d/50-surface-companion.conf"
-_MKINITCPIO_CONF = "/etc/mkinitcpio.conf.d/50-surface-companion.conf"
+_DRACUT_CONF = "/etc/dracut.conf.d/50-sdx-control-centre.conf"
+_MKINITCPIO_CONF = "/etc/mkinitcpio.conf.d/50-sdx-control-centre.conf"
+_LEGACY_DRACUT_CONF = "/etc/dracut.conf.d/50-surface-companion.conf"
+_LEGACY_MKINITCPIO_CONF = "/etc/mkinitcpio.conf.d/50-surface-companion.conf"
 _TOOLS_FILE = "/etc/initramfs-tools/modules"
 
 
@@ -73,12 +80,14 @@ def _initramfs_conf(ctx: Ctx) -> tuple[str, str]:
 
 
 def _tools_block_present() -> bool:
-    return INITRAMFS_BEGIN in (sysfs.read(_TOOLS_FILE, "") or "")
+    txt = sysfs.read(_TOOLS_FILE, "") or ""
+    return INITRAMFS_BEGIN in txt or LEGACY_INITRAMFS_BEGIN in txt
 
 
 def _initramfs_detect(ctx: Ctx) -> str:
     # any of our marks counts, including one left by an earlier run that used a different tool
-    return "applied" if (_tools_block_present() or is_managed(_DRACUT_CONF) or is_managed(_MKINITCPIO_CONF)) \
+    return "applied" if (_tools_block_present() or is_managed(_DRACUT_CONF) or is_managed(_MKINITCPIO_CONF)
+                         or is_managed(_LEGACY_DRACUT_CONF) or is_managed(_LEGACY_MKINITCPIO_CONF)) \
         else "available"
 
 
@@ -135,21 +144,28 @@ def _rebuild_initramfs(ctx: Ctx, kind: str, log: Log) -> None:
 def _initramfs_write_config(kind: str, mods: list[str]) -> None:
     if kind == "initramfs-tools":
         txt = sysfs.read(_TOOLS_FILE, "") or ""
-        txt = re.sub(rf"\n?{INITRAMFS_BEGIN}.*?{INITRAMFS_END}\n?", "\n", txt, flags=re.S)
+        for b, e in _initramfs_markers():
+            txt = re.sub(rf"\n?{re.escape(b)}.*?{re.escape(e)}\n?", "\n", txt, flags=re.S)
         txt += f"\n{INITRAMFS_BEGIN}\n" + "\n".join(mods) + f"\n{INITRAMFS_END}\n"
         sysfs.write(_TOOLS_FILE, txt)
     elif kind == "dracut":
+        remove_managed(_LEGACY_DRACUT_CONF)
         write_managed(_DRACUT_CONF, 'add_drivers+=" ' + " ".join(mods) + ' "\n')
     elif kind == "mkinitcpio":
+        remove_managed(_LEGACY_MKINITCPIO_CONF)
         write_managed(_MKINITCPIO_CONF, "MODULES+=(" + " ".join(mods) + ")\n")
 
 
 def _initramfs_remove_config() -> None:
     txt = sysfs.read(_TOOLS_FILE)
-    if txt is not None and INITRAMFS_BEGIN in txt:
-        sysfs.write(_TOOLS_FILE, re.sub(rf"\n?{INITRAMFS_BEGIN}.*?{INITRAMFS_END}\n?", "\n", txt, flags=re.S))
+    if txt is not None and (INITRAMFS_BEGIN in txt or LEGACY_INITRAMFS_BEGIN in txt):
+        for b, e in _initramfs_markers():
+            txt = re.sub(rf"\n?{re.escape(b)}.*?{re.escape(e)}\n?", "\n", txt, flags=re.S)
+        sysfs.write(_TOOLS_FILE, txt)
     remove_managed(_DRACUT_CONF)
     remove_managed(_MKINITCPIO_CONF)
+    remove_managed(_LEGACY_DRACUT_CONF)
+    remove_managed(_LEGACY_MKINITCPIO_CONF)
 
 
 def _initramfs_apply(ctx: Ctx, log: Log) -> None:
@@ -174,7 +190,8 @@ def _initramfs_apply(ctx: Ctx, log: Log) -> None:
 
 def _initramfs_revert(ctx: Ctx, log: Log) -> None:
     kind = ctx.distro.initramfs
-    leftover_other = (is_managed(_DRACUT_CONF) and kind != "dracut") or (is_managed(_MKINITCPIO_CONF) and kind != "mkinitcpio")
+    leftover_other = ((is_managed(_DRACUT_CONF) or is_managed(_LEGACY_DRACUT_CONF)) and kind != "dracut") \
+        or ((is_managed(_MKINITCPIO_CONF) or is_managed(_LEGACY_MKINITCPIO_CONF)) and kind != "mkinitcpio")
     _initramfs_remove_config()
     if leftover_other and not _tools_block_present() and kind:
         log("Removed a leftover setting from an earlier run; no images needed rebuilding.")
@@ -185,7 +202,8 @@ def _initramfs_revert(ctx: Ctx, log: Log) -> None:
 
 # ------------------------------------------------------------------ audio hiss
 
-AUTOMUTE_UNIT = "/etc/systemd/system/surface-companion-automute.service"
+AUTOMUTE_UNIT = "/etc/systemd/system/sdx-control-centre-automute.service"
+LEGACY_AUTOMUTE_UNIT = "/etc/systemd/system/surface-companion-automute.service"
 
 
 def _automute_present(ctx: Ctx) -> bool:
@@ -206,29 +224,35 @@ ExecStart={amixer} -c 0 sset "Auto-Mute Mode" Disabled
 WantedBy=multi-user.target suspend.target hibernate.target hybrid-sleep.target
 """)
     _systemctl("daemon-reload", log=log)
-    _systemctl("enable", "--now", "surface-companion-automute.service", log=log)
+    _systemctl("enable", "--now", "sdx-control-centre-automute.service", log=log)
 
 
 def _automute_revert(ctx: Ctx, log: Log) -> None:
+    _systemctl("disable", "--now", "sdx-control-centre-automute.service", log=log, check=False)
     _systemctl("disable", "--now", "surface-companion-automute.service", log=log, check=False)
     remove_managed(AUTOMUTE_UNIT)
+    remove_managed(LEGACY_AUTOMUTE_UNIT)
     _systemctl("daemon-reload", log=log)
     sysfs.run(["amixer", "-c", "0", "sset", "Auto-Mute Mode", "Enabled"])
 
 
 # ------------------------------------------------------------------ wake sources
 
-GPE_CONF = "/etc/modprobe.d/50-surface-companion-gpe.conf"
+GPE_CONF = "/etc/modprobe.d/50-sdx-control-centre-gpe.conf"
+LEGACY_GPE_CONF = "/etc/modprobe.d/50-surface-companion-gpe.conf"
 
 
 def _gpe_apply(ctx: Ctx, log: Log) -> None:
+    remove_managed(LEGACY_GPE_CONF)
     write_managed(GPE_CONF, "# Closing the lid while suspended wakes the device\nblacklist surface_gpe\n")
     sysfs.run(["modprobe", "-r", "surface_gpe"])
     log("surface_gpe blacklisted")
 
 
-NOWAKE_SCRIPT = "/usr/local/lib/surface-companion/disable-wake.sh"
-NOWAKE_UNIT = "/etc/systemd/system/surface-companion-nowake.service"
+NOWAKE_SCRIPT = "/usr/local/lib/sdx-control-centre/disable-wake.sh"
+NOWAKE_UNIT = "/etc/systemd/system/sdx-control-centre-nowake.service"
+LEGACY_NOWAKE_SCRIPT = "/usr/local/lib/surface-companion/disable-wake.sh"
+LEGACY_NOWAKE_UNIT = "/etc/systemd/system/surface-companion-nowake.service"
 
 
 def _nowake_apply(ctx: Ctx, log: Log) -> None:
@@ -252,29 +276,35 @@ ExecStart={NOWAKE_SCRIPT}
 WantedBy=multi-user.target suspend.target hibernate.target hybrid-sleep.target
 """)
     _systemctl("daemon-reload", log=log)
-    _systemctl("enable", "--now", "surface-companion-nowake.service", log=log)
+    _systemctl("enable", "--now", "sdx-control-centre-nowake.service", log=log)
 
 
 def _nowake_revert(ctx: Ctx, log: Log) -> None:
+    _systemctl("disable", "--now", "sdx-control-centre-nowake.service", log=log, check=False)
     _systemctl("disable", "--now", "surface-companion-nowake.service", log=log, check=False)
     remove_managed(NOWAKE_UNIT)
     remove_managed(NOWAKE_SCRIPT)
+    remove_managed(LEGACY_NOWAKE_UNIT)
+    remove_managed(LEGACY_NOWAKE_SCRIPT)
     _systemctl("daemon-reload", log=log)
     log("Wake sources return to their defaults after the next reboot.")
 
 
 # ------------------------------------------------------------------ wifi
 
-NM_CONF = "/etc/NetworkManager/conf.d/99-surface-companion.conf"
+NM_CONF = "/etc/NetworkManager/conf.d/99-sdx-control-centre.conf"
+LEGACY_NM_CONF = "/etc/NetworkManager/conf.d/99-surface-companion.conf"
 
 
 def _wifi_apply(ctx: Ctx, log: Log) -> None:
+    remove_managed(LEGACY_NM_CONF)
     write_managed(NM_CONF, "[connection]\nwifi.powersave = 2\n\n[device]\nwifi.scan-rand-mac-address=false\n")
     _systemctl("reload", "NetworkManager", log=log)
 
 
 def _wifi_revert(ctx: Ctx, log: Log) -> None:
     remove_managed(NM_CONF)
+    remove_managed(LEGACY_NM_CONF)
     _systemctl("reload", "NetworkManager", log=log)
 
 
@@ -317,8 +347,12 @@ def _gnome_revert(ctx: Ctx, log: Log) -> None:
 # ------------------------------------------------------------------ thermald model configuration
 
 THERMAL_DIR = "/etc/thermald"
-THERMAL_MANIFEST = THERMAL_DIR + "/.surface-companion"
-THERMAL_DROPIN = "/etc/systemd/system/thermald.service.d/50-surface-companion.conf"
+THERMAL_MANIFEST = THERMAL_DIR + "/.sdx-control-centre"
+THERMAL_DROPIN = "/etc/systemd/system/thermald.service.d/50-sdx-control-centre.conf"
+LEGACY_THERMAL_MANIFEST = THERMAL_DIR + "/.surface-companion"
+LEGACY_THERMAL_DROPIN = "/etc/systemd/system/thermald.service.d/50-surface-companion.conf"
+THERMAL_BACKUP_SUFFIX = ".before-sdx-control-centre"
+LEGACY_THERMAL_BACKUP_SUFFIX = ".before-surface-companion"
 THERMAL_MODELS = [
     ("Surface Laptop Go 2", "surface_laptop_go_2"), ("Surface Laptop Go", "surface_laptop_go_1"),
     ("Surface Laptop 4", None), ("Surface Laptop", "surface_laptop_1"),
@@ -339,6 +373,10 @@ def _thermal_apply(ctx: Ctx, log: Log) -> None:
     base = RAW + "contrib/thermald/" + (sub + "/" if sub else "")
     saved = []
     sysfs.p(THERMAL_DIR).mkdir(parents=True, exist_ok=True)
+    # migrate legacy manifest if present
+    manifest_path = sysfs.p(THERMAL_MANIFEST)
+    legacy_manifest = sysfs.p(LEGACY_THERMAL_MANIFEST)
+    active_manifest = manifest_path if manifest_path.exists() else legacy_manifest
     for name in ("thermal-conf.xml", "thermal-cpu-cdev-order.xml"):
         for url in (base + name, RAW + "contrib/thermald/" + name):
             try:
@@ -351,16 +389,21 @@ def _thermal_apply(ctx: Ctx, log: Log) -> None:
             log(f"{name}: not available upstream, skipped")
             continue
         dest = sysfs.p(f"{THERMAL_DIR}/{name}")
-        if dest.exists() and not (sysfs.p(THERMAL_MANIFEST).exists() and name in (sysfs.read(THERMAL_MANIFEST) or "")):
-            dest.rename(str(dest) + ".before-surface-companion")
-            log(f"existing {name} kept as {name}.before-surface-companion")
+        managed_names = (sysfs.read(str(active_manifest), "") or "") if active_manifest.exists() else ""
+        if dest.exists() and name not in managed_names:
+            bak = str(dest) + THERMAL_BACKUP_SUFFIX
+            dest.rename(bak)
+            log(f"existing {name} kept as {Path(bak).name}")
         dest.write_bytes(data)
         saved.append(name)
         log(f"installed {name} from {url}")
-    sysfs.p(THERMAL_MANIFEST).write_text("\n".join(saved) + "\n")
+    manifest_path.write_text("\n".join(saved) + "\n")
+    if legacy_manifest.exists():
+        legacy_manifest.unlink(missing_ok=True)
     # Newer thermald loads the OEM config from ACPI with --adaptive and ignores ours.
     show = sysfs.run(["systemctl", "show", "-p", "ExecStart", "--value", "thermald.service"]).stdout
     m = re.search(r"argv\[\]=([^;]*?)\s*;", show)
+    remove_managed(LEGACY_THERMAL_DROPIN)
     if m and "--adaptive" in m.group(1):
         cmd = m.group(1).replace("--adaptive", "").strip()
         sysfs.p(THERMAL_DROPIN).parent.mkdir(parents=True, exist_ok=True)
@@ -372,21 +415,27 @@ def _thermal_apply(ctx: Ctx, log: Log) -> None:
 
 
 def _thermal_revert(ctx: Ctx, log: Log) -> None:
-    names = (sysfs.read(THERMAL_MANIFEST, "") or "").split()
+    manifest = sysfs.p(THERMAL_MANIFEST)
+    legacy_manifest = sysfs.p(LEGACY_THERMAL_MANIFEST)
+    names = (sysfs.read(str(manifest), "") or sysfs.read(str(legacy_manifest), "") or "").split()
     for n in names:
         dest = sysfs.p(f"{THERMAL_DIR}/{n}")
         dest.unlink(missing_ok=True)
-        bak = sysfs.p(f"{THERMAL_DIR}/{n}.before-surface-companion")
-        if bak.exists():
-            bak.rename(dest)
-    sysfs.p(THERMAL_MANIFEST).unlink(missing_ok=True)
+        for suf in (THERMAL_BACKUP_SUFFIX, LEGACY_THERMAL_BACKUP_SUFFIX):
+            bak = sysfs.p(f"{THERMAL_DIR}/{n}{suf}")
+            if bak.exists():
+                bak.rename(dest)
+                break
+    manifest.unlink(missing_ok=True)
+    legacy_manifest.unlink(missing_ok=True)
     remove_managed(THERMAL_DROPIN)
+    remove_managed(LEGACY_THERMAL_DROPIN)
     _systemctl("daemon-reload", log=log)
     _systemctl("restart", "thermald.service", log=log, check=False)
 
 
 def _thermal_detect(ctx: Ctx) -> str:
-    return "applied" if sysfs.p(THERMAL_MANIFEST).exists() else "available"
+    return "applied" if (sysfs.p(THERMAL_MANIFEST).exists() or sysfs.p(LEGACY_THERMAL_MANIFEST).exists()) else "available"
 
 
 # ------------------------------------------------------------------ IPU3 firmware
@@ -440,28 +489,33 @@ def build() -> list[Fix]:
             "Disables the audio chip's Auto-Mute Mode, which causes hiss on many Surface models.",
             "Audio", WIKI + "Known-Issues-and-FAQ", "optional",
             applies=lambda c: surface(c) and _automute_present(c),
-            detect=_file_state(AUTOMUTE_UNIT), apply=_automute_apply, revert=_automute_revert),
+            detect=lambda c: "applied" if (is_managed(AUTOMUTE_UNIT) or is_managed(LEGACY_AUTOMUTE_UNIT)) else "available",
+            apply=_automute_apply, revert=_automute_revert),
         Fix("gpe-lid", "Closing the lid wakes a sleeping device",
             "Blacklists the surface_gpe module. Needed on Surface Pro 4 and 5. Lid events may stop being "
             "reported on other models.",
             "Sleep", WIKI + "Known-Issues-and-FAQ", "optional",
             applies=lambda c: surface(c) and bool(sysfs.run(["modinfo", "-F", "name", "surface_gpe"]).stdout.strip()),
-            detect=_file_state(GPE_CONF), apply=_gpe_apply, revert=lambda c, l: remove_managed(GPE_CONF),
+            detect=lambda c: "applied" if (is_managed(GPE_CONF) or is_managed(LEGACY_GPE_CONF)) else "available",
+            apply=_gpe_apply, revert=lambda c, l: (remove_managed(GPE_CONF), remove_managed(LEGACY_GPE_CONF)),
             recommend=lambda c: c.dev.model_in(("Surface Pro 4", "Surface Pro 5", "Surface Pro (5th Gen)")),
             reboot=True),
         Fix("no-wake", "Device wakes up in a bag",
             "Stops the USB controller and lid from waking the device. Wake it with the power button instead.",
             "Sleep", WIKI + "Known-Issues-and-FAQ", "optional",
             applies=lambda c: surface(c) and sysfs.p("/proc/acpi/wakeup").exists() and sysfs.have("systemctl"),
-            detect=lambda c: "applied" if (is_managed(NOWAKE_UNIT) and (sysfs.read(NOWAKE_SCRIPT, "") or "").startswith("#!"))
-            else "available", apply=_nowake_apply, revert=_nowake_revert,
+            detect=lambda c: "applied" if (
+                (is_managed(NOWAKE_UNIT) and (sysfs.read(NOWAKE_SCRIPT, "") or "").startswith("#!")) or
+                (is_managed(LEGACY_NOWAKE_UNIT) and (sysfs.read(LEGACY_NOWAKE_SCRIPT, "") or "").startswith("#!"))
+            ) else "available", apply=_nowake_apply, revert=_nowake_revert,
             recommend=lambda c: c.dev.family == "go"),
         Fix("wifi-powersave", "Wi-Fi drops (Marvell 88W8897 cards)",
             "Turns off Wi-Fi power saving and MAC randomisation while scanning in NetworkManager. "
             "Reported to help on some devices, not all.",
             "Wi-Fi", WIKI + "Marvell-88W8897-quirks", "optional",
             applies=lambda c: surface(c) and _marvell(c) and sysfs.p("/etc/NetworkManager").is_dir(),
-            detect=_file_state(NM_CONF), apply=_wifi_apply, revert=_wifi_revert),
+            detect=lambda c: "applied" if (is_managed(NM_CONF) or is_managed(LEGACY_NM_CONF)) else "available",
+            apply=_wifi_apply, revert=_wifi_revert),
         Fix("gnome-rightclick", "Right-click on the Type Cover (GNOME)",
             "Switches the touchpad to click areas so the bottom-right corner is a right-click.",
             "Input", WIKI + "Known-Issues-and-FAQ", "optional", scope="user",

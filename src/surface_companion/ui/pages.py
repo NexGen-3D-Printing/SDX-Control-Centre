@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -14,7 +15,8 @@ from ..pkg import community, distro as dist
 from .dialogs import JobDialog, confirm, confirm_risk, notify
 from . import prefs
 from .. import handson as hands
-from .widgets import (Banner, Card, ChoiceGroup, Pill, Row, SliderRow, Sparkline, Toggle, button, label, separator)
+from .widgets import (Banner, Card, ChoiceGroup, Pill, Row, SliderRow, Sparkline, Toggle, button, label, separator,
+                     enable_overlay_scrollbar)
 
 
 class Page(QWidget):
@@ -31,6 +33,9 @@ class Page(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        enable_overlay_scrollbar(scroll)
         outer.addWidget(scroll)
         inner = QWidget()
         scroll.setWidget(inner)
@@ -241,9 +246,16 @@ class OverviewPage(Page):
         self.body.addLayout(self.banners)
         self.device_card = Card()
         self.model = label("", "h1")
-        self.sub = label("", "muted")
-        self.device_card.add(self.model)
-        self.device_card.add(self.sub)
+        self.sku = label("", "muted")      # System SKU / variant, shown under the model name
+        self.sku.hide()
+        self.body.addWidget(self.model)
+        self.body.addWidget(self.sku)
+
+        # System info as bullet list
+        self.system_info_layout = QVBoxLayout()
+        self.system_info_layout.setSpacing(8)
+        self.system_info_layout.setContentsMargins(0, 0, 0, 0)
+        self.device_card.add_layout(self.system_info_layout)
         self.body.addWidget(self.device_card)
 
         q = Card("Quick controls")
@@ -284,26 +296,274 @@ class OverviewPage(Page):
         self.body.addWidget(self.attention)
         self._fixes_counts = None
         self._updates = None
+        self._info = None          # Static system info dict (collected once)
+        self._info_rendered = False
+        self._st = None            # Last device state (used to fill firmware)
 
     def on_show(self):
+        # Collect static system info once on first show
+        if self._info is None:
+            self._collect_static_info()
         self.b.call("get_fixes", ok=self._got_fixes, err=lambda m: None)
+        self._try_render_info()
 
+    def _try_render_info(self):
+        """Fill in firmware from state if available, then render the bullet list."""
+        if self._info is None or self._info_rendered:
+            return
+        st = getattr(self, "_st", None) or {}
+        d = (st or {}).get("device") or {}
+        ver = d.get("version")
+        if ver and self._info["firmware"] in ("", "Unknown"):
+            self._info["firmware"] = str(ver)
+        self._render_static_list()
+        self._info_rendered = True
+
+    def _collect_static_info(self):
+        """Collect static hardware/system info once on launch."""
+        import re
+        import subprocess
+        info = {
+            "os_version": "", "processor": "", "ram": "", "storage": "Unknown",
+            "model": "Unknown", "firmware": "Unknown", "secure_boot": "Unknown",
+            "tpm": "Unknown", "wifi": "Unknown", "bluetooth": "Unknown",
+        }
+        self._st = None
+
+        # 1. OS train name from rpm-ostree (Latest or Testing)
+        try:
+            out = subprocess.run(["rpm-ostree", "status"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                line = line.strip()
+                if line.startswith("Version:"):
+                    ver = line.split(":", 1)[1].strip().lower()
+                    if ver.startswith("testing"):
+                        info["os_version"] = "Testing"
+                    elif ver.startswith(("stable", "latest")):
+                        info["os_version"] = "Latest"
+                    break
+        except Exception:
+            pass
+
+        # 2. Processor model
+        try:
+            out = subprocess.run(["lscpu"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                if line.lower().startswith("model name:"):
+                    info["processor"] = line.split(":", 1)[1].strip().replace("(R)", "\u00ae").replace("(TM)", "\u2122")
+                    break
+        except Exception:
+            pass
+
+        # 3. RAM total, rounded up to whole GB
+        try:
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        mem_kb = int(line.split()[1])
+                        info["ram"] = f"{(mem_kb + 1024 * 1024 - 1) // (1024 * 1024)}GB"
+                        break
+        except Exception:
+            pass
+
+        # 4. Storage: first real disk (model + size)
+        try:
+            out = subprocess.run(["lsblk", "-dno", "NAME,MODEL,SIZE"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                name, size = parts[0], parts[-1]
+                model = " ".join(parts[1:-1]).strip().strip('"').replace("_", " ")
+                if name.startswith(("loop", "vfd", "zram", "dm-", "sr")):
+                    continue
+                kind = "NVMe" if name.startswith("nvme") else ("HDD" if name.startswith(("hda", "sd")) else "SSD")
+                # Model from lsblk often repeats the kind (e.g. "KBG40ZNS512G NVMe KIOXIA 512GB")
+                brand = re.sub(r"NVMe", "", model).replace("_", " ").strip()
+                brand = re.sub(r"\b\d+\s*GB\b", "", brand).strip(" .")
+                parts = [p for p in (brand, size, kind) if p]
+                info["storage"] = " \u00b7 ".join(parts) if model else f"{size} ({kind})"
+                break
+        except Exception:
+            pass
+
+        # 5. Surface model + system SKU from DMI
+        try:
+            with open("/sys/class/dmi/id/product_name") as f:
+                info["model"] = f.read().strip() or "Unknown"
+        except Exception:
+            pass
+        # 5b. System SKU / variant
+        info["sku"] = ""
+        try:
+            with open("/sys/class/dmi/id/product_sku") as f:
+                info["sku"] = f.read().strip() or ""
+        except Exception:
+            pass
+
+        # 6. Secure Boot
+        try:
+            with open("/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c", "rb") as f:
+                data = f.read()
+                info["secure_boot"] = "Enabled" if data[-1] == 1 else "Disabled"
+        except Exception:
+            pass
+
+        # 7. TPM
+        import os
+        if os.path.exists("/dev/tpm0") or os.path.exists("/dev/tpmrm0"):
+            try:
+                r = subprocess.run(["tpm2_getrandom", "1"], capture_output=True, timeout=5)
+                info["tpm"] = "Present & Active" if r.returncode == 0 else "Present"
+            except Exception:
+                info["tpm"] = "Present"
+        else:
+            info["tpm"] = "Not Present"
+
+        # 8. WiFi: hardware model + generation
+        wifi_model = ""
+        try:
+            out = subprocess.run(["lspci"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                if "Network controller" in line:
+                    seg = line.split(":", 2)
+                    if len(seg) == 3:
+                        m = seg[2].split("[")[0].strip()
+                        m = re.sub(r"\(rev \d+\)$", "", m).strip()
+                        m = re.sub(r"^Intel Corporation\s+", "", m)
+                        wifi_model = m
+                    break
+        except Exception:
+            pass
+        wifi_gen = ""
+        try:
+            out = subprocess.run(["iw", "list"], capture_output=True, text=True, timeout=10).stdout
+            if "EHT" in out:
+                wifi_gen = "WiFi 7"
+            elif "HE" in out:
+                wifi_gen = "WiFi 6E" if re.search(r"\b5955\.0|5975\.0|60[0-9]{2}\.0", out) else "WiFi 6"
+            elif "VHT" in out:
+                wifi_gen = "WiFi 5"
+            elif "HT" in out:
+                wifi_gen = "WiFi 4"
+            else:
+                wifi_gen = "WiFi 3"
+        except Exception:
+            pass
+        info["wifi"] = " \u00b7 ".join(x for x in (wifi_model, wifi_gen) if x) or "Not Detected"
+
+        # 9. Bluetooth: hardware model + version
+        bt_model = ""
+        bt_vid, bt_pid = "", ""
+        try:
+            out = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                if "Bluetooth" in line:
+                    parts = line.split("ID")
+                    if len(parts) == 2:
+                        m = re.search(r"\b([0-9a-f]{4}:[0-9a-f]{4})\s+(.*)", parts[1].strip())
+                        if m:
+                            bt_vid, bt_pid = m.group(1).split(":")
+                            name = m.group(2).replace("Bluetooth", "").strip(" .")
+                            name = re.sub(r"\bCorp\.\s*", "", name).strip()
+                            bt_model = name
+                    break
+        except Exception:
+            pass
+        bt_version = ""
+        if bt_vid and bt_pid:
+            try:
+                out = subprocess.run(["lsusb", "-v", "-d", f"{bt_vid}:{bt_pid}"], capture_output=True, text=True, timeout=5).stdout
+                mc = re.search(r"Interface SubClass\s+(?:\([^)]*\)\s*)?(\d+)", out)
+                mn = re.search(r"Interface Protocol \s+(?:\([^)]*\)\s*)?(\d+)", out)
+                if mc:
+                    major = int(mc.group(1))
+                    if major >= 4 and major <= 14:
+                        minor = int(mn.group(1)) if mn else 0
+                        bt_version = f"BT {major - 4}.{minor}"
+            except Exception:
+                pass
+        info["bluetooth"] = " \u00b7 ".join(x for x in (bt_model, bt_version) if x) or "Not Detected"
+
+        self._info = info
+
+    def _render_static_list(self):
+        info = self._info
+
+        # Show the System SKU under the model name, e.g. "Surface Pro 9 for Business (SKU 2038)"
+        sku = info.get("sku", "")
+        if sku:
+            m = re.match(r"(.*)_(\d{3,4})$", sku)
+            if m:
+                variant = m.group(1).replace("_", " ").strip()
+                self.sku.setText(f"{variant} (SKU {m.group(2)})")
+            else:
+                self.sku.setText(sku.replace("_", " ").strip())
+            self.sku.show()
+
+        lines = []
+        if info.get("os_version"):
+            lines.append(f"OS Version: Bazzite-SDX {info['os_version']}")
+        if info.get("processor"):
+            lines.append(f"Processor: {info['processor']}")
+        if info.get("ram"):
+            lines.append(f"RAM: {info['ram']}")
+        lines.append(f"Storage: {info.get('storage', 'Unknown')}")
+        model = info.get("model", "Unknown")
+        if info.get("sku"):
+            lines.append(f"Surface Model: {model} \u00b7 {info['sku'].replace('_', ' ')}")
+        else:
+            lines.append(f"Surface Model: {model}")
+        lines.append(f"Firmware: {info.get('firmware', 'Unknown')}")
+        lines.append(f"Secure Boot: {info.get('secure_boot', 'Unknown')}")
+        lines.append(f"TPM: {info.get('tpm', 'Unknown')}")
+        lines.append(f"WiFi: {info.get('wifi', 'Unknown')}")
+        lines.append(f"Bluetooth: {info.get('bluetooth', 'Unknown')}")
+        while self.system_info_layout.count():
+            item = self.system_info_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for line in lines:
+            lbl = label(f"\u2022 {line}", "muted")
+            lbl.setWordWrap(True)
+            self.system_info_layout.addWidget(lbl)
+        
     def _got_fixes(self, fx):
         self._fixes_counts = [f for f in fx if f["level"] == "recommended" and f["status"] == "available"]
         self._render_attention()
 
     def update_state(self, st):
+        # Update dynamic state only - static info is collected once in _collect_static_info
         d = st["device"]
         self.model.setText(d["model"] or "Unknown device")
-        distro = self.win.distro_name
-        self.sub.setText(" · ".join(x for x in (distro, f"kernel {d['kernel']}") if x))
+
+        # Fill in firmware from state (once) and render the static bullet list
+        self._st = st
+        self._try_render_info()
+
+        # Update battery info
+        bat = st["battery"]
+        self.bat_card.setVisible(bat.get("present", False))
+        if bat.get("present"):
+            parts = [f"{bat['percent']}% · {bat['status']}"]
+            if bat.get("health_percent"):
+                parts.append(f"Capacity is {bat['health_percent']}% of new")
+            if bat.get("cycles"):
+                parts.append(f"{bat['cycles']} charge cycles")
+            self.bat_text.setText("\n".join(parts))
+        
+        # Update display brightness
         disp = st["display"]["screen"]
         self.bright.setEnabled(bool(disp) and not self.win.brightness_system)
         if disp:
             self.bright.set_value(disp["percent"])
+        
+        # Update thermal info
         self.therm.update_state(st["thermal"])
         self.clocks.update_state(st.get("clocks") or {})
         self.simple_temp_text.setText(_simple_thermal_line(st["thermal"]))
+        
+        # Update performance profile
         perf = st["performance"]
         if perf.get("available"):
             cur = next((c["label"] for c in perf["choices"] if c["id"] == perf["current"]), perf["current"])
@@ -315,16 +575,8 @@ class OverviewPage(Page):
                 if cfg and (st.get("overrides") or {}).get("auto_profile") else cur if ov else f"System ({cur})")
         else:
             self.profile_row.set_desc("Not available on this kernel")
-        bat = st["battery"]
-        self.bat_card.setVisible(bat.get("present", False))
-        if bat.get("present"):
-            parts = [f"{bat['percent']}% · {bat['status']}"]
-            if bat.get("health_percent"):
-                parts.append(f"Capacity is {bat['health_percent']}% of new")
-            if bat.get("cycles"):
-                parts.append(f"{bat['cycles']} charge cycles")
-            self.bat_text.setText("\n".join(parts))
-        # banners
+        
+        # Update banners
         while self.banners.count():
             w = self.banners.takeAt(0).widget()
             if w:
@@ -335,7 +587,7 @@ class OverviewPage(Page):
         if not self.win.backend.has_daemon:
             self.banners.addWidget(Banner(
                 "The background service isn't running, so this window is read-only. Start it with "
-                "“sudo systemctl start surface-companion”, or run the installer again.", "warn"))
+                "“sudo systemctl start sdx-control-centre”, or run the installer again.", "warn"))
         kernel = self.win.component("kernel")
         if kernel and kernel.get("installed") and not d["surface_kernel"]:
             self.banners.addWidget(Banner(
@@ -801,15 +1053,6 @@ class CameraPage(Page):
         self.rows = QVBoxLayout()
         self.status.add_layout(self.rows)
         self.body.addWidget(self.status)
-        c = Card("Set up")
-        c.add(label("Cameras behind Intel's image processor need extra userspace software (libcamera) and "
-                    "firmware. Ordinary USB (UVC) webcams work without it.", "muted"))
-        r = QHBoxLayout()
-        r.addWidget(button("Install camera support", "primary", lambda: self.win.install(["camera"])))
-        r.addWidget(button("Check camera fixes", on_click=lambda: self.win.goto("fixes")))
-        r.addStretch(1)
-        c.add_layout(r)
-        self.body.addWidget(c)
         self.community_host = self.adv(QWidget())
         self.community_box = QVBoxLayout(self.community_host)
         self.community_box.setContentsMargins(0, 0, 0, 0)
@@ -878,7 +1121,7 @@ class CameraPage(Page):
 
     def _run_terminal(self, d, undo: bool):
         drv = community.by_id(d["id"])
-        cache = Path.home() / ".cache" / "surface-companion" / "community"
+        cache = Path.home() / ".cache" / "sdx-control-centre" / "community"
         self.win.toast("Downloading the pinned version...")
 
         def launch(src):
@@ -1402,3 +1645,59 @@ class SoftwarePage(Page):
     def diagnostics(self):
         self.win.run_job("Diagnostics", "diagnostics", {},
                          lambda ok, msg: None)
+
+
+# ------------------------------------------------------------------------------------------ Links
+
+class LinksPage(Page):
+    key, title = "links", "SDX Links"
+    subtitle = "Projects and resources for Bazzite-DX"
+
+    def build(self):
+        self.body.addWidget(label("Bazzite-DX & SDX Projects", "h2"))
+
+        # Bazzite SDX
+        bazzite = Card()
+        bazzite.add(label("Bazzite SDX - Surface Development Edition", "h3"))
+        bazzite.add(label("A Bazzite variant specifically tailored for Surface device development and testing. "
+                         "Includes the latest Surface kernel and drivers, pre-configured for developers and enthusiasts.", "muted"))
+        bazzite.add(button("View on GitHub", "primary", lambda: self.win.run_job("Open", "open_url", 
+                   {"url": "https://github.com/NexGen-3D-Printing/bazzite-sdx"})))
+        self.body.addWidget(bazzite)
+
+        # Dexnor Keyboard Linux
+        dexnor = Card()
+        dexnor.add(label("Dexnor Keyboard Linux - Surface Pro Keyboard Fix", "h3"))
+        dexnor.add(label("A targeted fix for Surface Pro keyboard issues on Linux. Provides stable keyboard "
+                        "functionality including keys that often don't work out of the box.", "muted"))
+        dexnor.add(button("View on GitHub", "primary", lambda: self.win.run_job("Open", "open_url",
+                   {"url": "https://github.com/NexGen-3D-Printing/Dexnor-Keyboard-Linux"})))
+        self.body.addWidget(dexnor)
+
+        # SDX Control Centre (this project)
+        sdx = Card()
+        sdx.add(label("SDX Control Centre - Surface Device Management", "h3"))
+        sdx.add(label("The application you're using right now. A comprehensive tool for managing Surface devices "
+                     "on Bazzite-DX, providing one-click access to system controls, diagnostics, and updates.", "muted"))
+        sdx.add(button("View on GitHub", "primary", lambda: self.win.run_job("Open", "open_url", 
+                   {"url": "https://github.com/NexGen-3D-Printing/sdx-control-centre"})))
+        self.body.addWidget(sdx)
+
+        # Links to documentation and resources
+        self.body.addWidget(separator())
+        self.body.addWidget(label("Additional Resources", "h2"))
+
+        linux_surface = Card()
+        linux_surface.add(label("linux-surface - Surface Hardware Support", "h3"))
+        linux_surface.add(label("The foundation of Surface Linux support. Provides kernel patches, drivers, and "
+                               "documentation for running Surface devices on Linux.", "muted"))
+        linux_surface.add(button("Visit linux-surface", "primary", lambda: self.win.run_job("Open", "open_url",
+                   {"url": "https://github.com/linux-surface/linux-surface"})))
+        self.body.addWidget(linux_surface)
+
+        # SDX Portal button
+        sdx_portal = Card()
+        sdx_portal.add(label("SDX Portal", "h3"))
+        sdx_portal.add(label("Quick access to Bazzite-SDX setup and configuration tools.", "muted"))
+        sdx_portal.add(button("Open SDX Portal", "portal", lambda: subprocess.Popen(["yafti_gtk.py", "/usr/share/yafti/nexgen3d-sdx.yml"])))
+        self.body.addWidget(sdx_portal)

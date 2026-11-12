@@ -2,10 +2,10 @@
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
 <policyconfig>
-  <vendor>Surface Companion</vendor>
+  <vendor>SDX Control Centre</vendor>
   <vendor_url>https://github.com/linux-surface/linux-surface</vendor_url>
 
-  <action id="org.surfacecompanion.control">
+  <action id="org.sdxcontrolcentre.control">
     <description>Change Surface hardware settings</description>
     <message>Authentication is required to change Surface hardware settings</message>
     <defaults>
@@ -15,7 +15,7 @@
     </defaults>
   </action>
 
-  <action id="org.surfacecompanion.detach">
+  <action id="org.sdxcontrolcentre.detach">
     <description>Detach the Surface Book screen</description>
     <message>Authentication is required to detach the screen</message>
     <defaults>
@@ -25,7 +25,7 @@
     </defaults>
   </action>
 
-  <action id="org.surfacecompanion.admin">
+  <action id="org.sdxcontrolcentre.admin">
     <description>Install or change Surface system software and fixes</description>
     <message>Authentication is required to install software or change system files</message>
     <defaults>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Renamed project and all runtime identifiers/assets from `surface-companion` to `sdx-control-centre` / SDX Control Centre (binaries, service, desktop/autostart/icons, D-Bus & polkit IDs, packaging/install scripts) while preserving upstream attribution.
+- Added compatibility handling for legacy state paths, environment variables, managed-fix markers/paths/units, and migration/cleanup of old installs.
+- UI/behavior improvements from 0.3.x work: Bazzite/tuned-ppd aware performance profiles, refined Overview/system info, purple theming, overlay auto-hide scrollbars, single-finger touch scrolling, maximized frameless window, updated app icon.
+
 ## 0.3.0
 
 - **System test** page. A read-only health check of 18 things (Surface kernel, Surface Aggregator, keyboard and

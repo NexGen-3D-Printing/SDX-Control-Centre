@@ -11,7 +11,8 @@ from .. import sysfs
 from ..device import Device
 from ..pkg.distro import Distro
 
-MARK = "# Managed by Surface Companion. Remove with the app (Fixes page) or delete this file.\n"
+MARK = "# Managed by SDX Control Centre. Remove with the app (Fixes page) or delete this file.\n"
+LEGACY_MARK = "# Managed by Surface Companion. Remove with the app (Fixes page) or delete this file.\n"
 Log = Callable[[str], None]
 
 
@@ -42,7 +43,9 @@ class Fix:
 
 def is_managed(path: str) -> bool:
     t = sysfs.read(path)
-    return t is not None and MARK.strip() in t
+    if t is None:
+        return False
+    return MARK.strip() in t or LEGACY_MARK.strip() in t
 
 
 def write_managed(path: str, body: str, mode: int = 0o644) -> None:

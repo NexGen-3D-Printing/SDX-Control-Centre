@@ -134,7 +134,7 @@ def test_immutable_fedora_uses_wiki_recipe_with_warning(root):
                                 mkdistro("bazzite", "fedora", immutable=True))
     assert plan.level == "unsupported"
     cmds = [" ".join(s.argv) for s in plan.steps if s.kind == "cmd"]
-    assert cmds[0].startswith("rpm-ostree override replace /var/tmp/surface-companion-kernel.rpm")
+    assert cmds[0].startswith("rpm-ostree override replace /var/tmp/sdx-control-centre-kernel.rpm")
     assert "--install kernel-surface" in cmds[0] and "--remove kernel-core" in cmds[0]
     assert cmds[-1] == "rpm-ostree install surface-secureboot"        # on its own, as the wiki asks
     assert any("Surface Book 2" in r for r in plan.risks)
@@ -244,7 +244,7 @@ def test_reboot_pci_grub_dropin_roundtrip(root, monkeypatch):
     monkeypatch.setattr(bootloader, "sh", lambda argv, log, timeout=300: cmds.append(argv))
     monkeypatch.setattr(sysfs, "have", lambda c: c == "update-grub")
     bootloader.add("reboot=pci", lambda l: None)
-    f = root / "etc/default/grub.d/50-surface-companion.cfg"
+    f = root / "etc/default/grub.d/50-sdx-control-centre.cfg"
     assert "reboot=pci" in f.read_text() and cmds == [["update-grub"]]
     bootloader.remove("reboot=pci", lambda l: None)
     assert not f.exists()
@@ -258,7 +258,7 @@ def test_initramfs_tools_block_added_and_removed_cleanly(root, monkeypatch):
     catalog._initramfs_apply(ctx, lambda l: None)
     catalog._initramfs_apply(ctx, lambda l: None)           # idempotent
     txt = (root / "etc/initramfs-tools/modules").read_text()
-    assert txt.count("BEGIN surface-companion") == 1 and "8250_dw" in txt and "vfat" in txt
+    assert txt.count("BEGIN sdx-control-centre") == 1 and "8250_dw" in txt and "vfat" in txt
     assert catalog._initramfs_detect(ctx) == "applied"
     catalog._initramfs_revert(ctx, lambda l: None)
     txt = (root / "etc/initramfs-tools/modules").read_text()
@@ -338,31 +338,31 @@ def test_failed_rebuild_rolls_the_config_back(root, monkeypatch):
     put(root, "/etc/initramfs-tools/modules", "vfat\n")
     with pytest.raises(RuntimeError):
         catalog._initramfs_apply(ctx, lambda l: None)
-    assert "surface-companion" not in (root / "etc/initramfs-tools/modules").read_text()
+    assert "sdx-control-centre" not in (root / "etc/initramfs-tools/modules").read_text() and "surface-companion" not in (root / "etc/initramfs-tools/modules").read_text()
     assert catalog._initramfs_detect(ctx) == "available"
     ctx = Ctx(mkdev("Surface Go 3"), mkdistro("f", "fedora", initramfs="dracut"))
     with pytest.raises(RuntimeError):
         catalog._initramfs_apply(ctx, lambda l: None)
-    assert not (root / "etc/dracut.conf.d/50-surface-companion.conf").exists()
+    assert not (root / "etc/dracut.conf.d/50-sdx-control-centre.conf").exists()
 
 
 def test_dracut_and_mkinitcpio_config_written(root, monkeypatch):
     monkeypatch.setattr(catalog, "_rebuild_initramfs", lambda ctx, kind, log: None)
     monkeypatch.setattr(catalog, "_initramfs_modules", lambda ctx: ["a", "b"])
     catalog._initramfs_apply(Ctx(mkdev("Surface Go 3"), mkdistro("f", "fedora", initramfs="dracut")), lambda l: None)
-    assert 'add_drivers+=" a b "' in (root / "etc/dracut.conf.d/50-surface-companion.conf").read_text()
+    assert 'add_drivers+=" a b "' in (root / "etc/dracut.conf.d/50-sdx-control-centre.conf").read_text()
     catalog._initramfs_apply(Ctx(mkdev("Surface Go 3"), mkdistro("a", "arch", initramfs="mkinitcpio")), lambda l: None)
-    assert "MODULES+=(a b)" in (root / "etc/mkinitcpio.conf.d/50-surface-companion.conf").read_text()
+    assert "MODULES+=(a b)" in (root / "etc/mkinitcpio.conf.d/50-sdx-control-centre.conf").read_text()
 
 
 def test_undo_cleans_a_leftover_from_a_different_tool_without_rebuilding(root, monkeypatch):
-    base.write_managed("/etc/dracut.conf.d/50-surface-companion.conf", 'add_drivers+=" a "\n')
+    base.write_managed("/etc/dracut.conf.d/50-sdx-control-centre.conf", 'add_drivers+=" a "\n')
     calls = []
     monkeypatch.setattr(catalog, "sh", lambda argv, log, t=300: calls.append(argv))
     ctx = Ctx(mkdev("Surface Laptop 3"), mkdistro("u", "debian", initramfs="initramfs-tools"))
     assert catalog._initramfs_detect(ctx) == "applied"                   # shows up so it can be undone
     catalog._initramfs_revert(ctx, lambda l: None)
-    assert not (root / "etc/dracut.conf.d/50-surface-companion.conf").exists() and calls == []
+    assert not (root / "etc/dracut.conf.d/50-sdx-control-centre.conf").exists() and calls == []
     assert catalog._initramfs_detect(ctx) == "available"
 
 

@@ -20,11 +20,15 @@ from .hw import battery, book, camera, clocks, display, pen, perf, sleep, therma
 from .pkg import community, distro as dist, nvidia, planner
 
 POLKIT_READ = ""                                   # no authorisation needed
-POLKIT_CONTROL = "org.surfacecompanion.control"
-POLKIT_DETACH = "org.surfacecompanion.detach"
-POLKIT_ADMIN = "org.surfacecompanion.admin"
+POLKIT_CONTROL = "org.sdxcontrolcentre.control"
+POLKIT_DETACH = "org.sdxcontrolcentre.detach"
+POLKIT_ADMIN = "org.sdxcontrolcentre.admin"
 
-STATE_DIR = Path(os.environ.get("SC_STATE_DIR", "/var/lib/surface-companion"))
+_LEGACY_STATE_DIR = Path("/var/lib/surface-companion")
+_STATE_ENV = os.environ.get("SDX_STATE_DIR") or os.environ.get("SC_STATE_DIR")
+STATE_DIR = Path(_STATE_ENV) if _STATE_ENV else Path("/var/lib/sdx-control-centre")
+if not _STATE_ENV and not STATE_DIR.exists() and _LEGACY_STATE_DIR.exists():
+    STATE_DIR = _LEGACY_STATE_DIR
 Log = Callable[[str], None]
 
 
@@ -160,7 +164,7 @@ def diagnostics(log: Log, out_dir: str | Path | None = None) -> str:
     (work / "state.json").write_text(json.dumps(fast_state(), indent=1))
     (work / "os-release").write_text(sysfs.read("/etc/os-release", "") or "")
     (work / "cmdline").write_text(sysfs.read("/proc/cmdline", "") or "")
-    archive = outdir / f"surface-diagnostics-{stamp}.tar.gz"
+    archive = outdir / f"sdx-control-centre-diagnostics-{stamp}.tar.gz"
     with tarfile.open(archive, "w:gz") as t:
         t.add(work, arcname=work.name)
     for f in work.iterdir():

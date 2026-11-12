@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=SDX Control Centre (tray)
+Exec=sdx-control-centre --hidden
+Icon=sdx-control-centre
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

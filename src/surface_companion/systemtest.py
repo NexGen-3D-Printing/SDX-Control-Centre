@@ -316,7 +316,7 @@ def report_text(results: list[dict], device: dict | None = None, stress: dict | 
     """Plain-text report to paste into a bug report. Contains no personal data beyond the device model and OS."""
     mark = {"ok": "PASS", "warn": "WARN", "fail": "FAIL", "skip": "SKIP"}
     s = summarize(results)
-    lines = ["Surface Companion system test", ""]
+    lines = ["SDX Control Centre system test", ""]
     if device:
         lines.append(f"Device: {device.get('model', '?')} · kernel {device.get('kernel', '?')} · {device.get('distro', '')}".rstrip(" ·"))
     c = s["counts"]

@@ -90,8 +90,14 @@ def _test(p):
     p.drawPolyline([QPointF(7.5, 12.5), QPointF(10.5, 15.5), QPointF(16.5, 9)])
 
 
+def _link(p):
+    p.drawArc(QRectF(3, 10, 8, 8), 0 * 16, -180 * 16)
+    p.drawArc(QRectF(13, 10, 8, 8), 0 * 16, -180 * 16)
+    p.drawLine(QPointF(7, 10), QPointF(17, 10))
+
+
 DRAW = {"test": _test, "home": _home, "display": _sun, "performance": _gauge, "sleep": _moon, "pen": _pen,
-        "camera": _camera, "book": _book, "fixes": _wrench, "software": _box, "battery": _battery}
+        "camera": _camera, "book": _book, "fixes": _wrench, "software": _box, "battery": _battery, "link": _link}
 
 
 def icon(name: str, color: str, size: int = 20) -> QIcon:
@@ -102,7 +108,7 @@ def app_icon() -> QIcon:
     """Antenna-free, simple: a rounded tile with a gauge."""
     def draw(p):
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor("#0f6cbd"))
+        p.setBrush(QColor("#7b1fa2"))
         p.drawRoundedRect(QRectF(1, 1, 22, 22), 6, 6)
         pen = QPen(QColor("white"), 2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)

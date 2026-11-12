@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QP
 
 from . import prefs, theme
 from .dialogs import confirm
-from .widgets import Card, Pill, Row, button, label
+from .widgets import enable_overlay_scrollbar, Card, Pill, Row, button, label
 
 SCAN_STEPS = [
     ("state", "Identifying your Surface", "get_state"),
@@ -133,7 +133,7 @@ class WelcomeWizard(QDialog):
         self.items: list[dict] = []
         self.checks: list[tuple[QCheckBox, dict]] = []
         self.want_tour = False
-        self.setWindowTitle("Welcome to Surface Companion")
+        self.setWindowTitle("Welcome to SDX Control Centre")
         self.setMinimumSize(740, 600)
         self.setModal(True)
         outer = QVBoxLayout(self)
@@ -176,6 +176,7 @@ class WelcomeWizard(QDialog):
         sc = QScrollArea()
         sc.setWidgetResizable(True)
         sc.setFrameShape(QFrame.Shape.NoFrame)
+        enable_overlay_scrollbar(sc)
         inner = QWidget()
         body = QVBoxLayout(inner)
         body.setContentsMargins(0, 0, 8, 0)
@@ -185,7 +186,7 @@ class WelcomeWizard(QDialog):
         return body
 
     def _build_welcome(self):
-        lay = self._page("Welcome", "Surface Companion controls and fixes your Surface on Linux. It works the same on "
+        lay = self._page("Welcome", "SDX Control Centre controls and fixes your Surface on Linux. It works the same on "
                                     "any desktop.")
         c = Card("Let's get you set up")
         for t in ("Scan your device and see exactly what you have",

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from .. import sysfs
 
-LOGIND_DROPIN = "/etc/systemd/logind.conf.d/50-surface-companion.conf"
-MARK = "# Managed by Surface Companion\n"
+LOGIND_DROPIN = "/etc/systemd/logind.conf.d/50-sdx-control-centre.conf"
+LEGACY_LOGIND_DROPIN = "/etc/systemd/logind.conf.d/50-surface-companion.conf"
+MARK = "# Managed by SDX Control Centre\n"
+LEGACY_MARK = "# Managed by Surface Companion\n"
 LID_ACTIONS = ("suspend", "ignore", "lock", "poweroff", "hibernate")
 
 
@@ -16,8 +18,10 @@ def _lid_device():
 
 
 def _lid_action() -> str:
-    txt = sysfs.read(LOGIND_DROPIN, "") or ""
-    for line in txt.splitlines():
+    txt = sysfs.read(LOGIND_DROPIN)
+    if txt is None:
+        txt = sysfs.read(LEGACY_LOGIND_DROPIN, "") or ""
+    for line in (txt or "").splitlines():
         if line.startswith("HandleLidSwitch="):
             return line.split("=", 1)[1].strip()
     return "default"
@@ -58,11 +62,23 @@ def set_lid_action(action: str) -> None:
     if action != "default" and action not in LID_ACTIONS:
         raise ValueError(f"Unsupported lid action: {action}")
     path = sysfs.p(LOGIND_DROPIN)
+    legacy = sysfs.p(LEGACY_LOGIND_DROPIN)
     if action == "default":
-        if path.exists() and (sysfs.read(LOGIND_DROPIN, "") or "").startswith(MARK.strip()):
-            path.unlink()
+        removed = False
+        for p, m in ((path, MARK), (legacy, LEGACY_MARK), (legacy, MARK)):
+            if p.exists():
+                txt = sysfs.read(str(p), "") or ""
+                if txt.startswith(m.strip()):
+                    p.unlink()
+                    removed = True
+        if removed:
             sysfs.run(["systemctl", "kill", "-s", "HUP", "systemd-logind.service"])
         return
+    # clean up legacy file when writing new one
+    if legacy.exists():
+        txt = sysfs.read(LEGACY_LOGIND_DROPIN, "") or ""
+        if txt.startswith(MARK.strip()) or txt.startswith(LEGACY_MARK.strip()):
+            legacy.unlink(missing_ok=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{MARK}[Login]\nHandleLidSwitch={action}\nHandleLidSwitchExternalPower={action}\n")
     # logind re-reads its config on SIGHUP; restarting it would drop sessions.

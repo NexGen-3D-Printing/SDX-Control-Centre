@@ -97,7 +97,7 @@ def _link(p):
 
 
 DRAW = {"test": _test, "home": _home, "display": _sun, "performance": _gauge, "sleep": _moon, "pen": _pen,
-        "camera": _camera, "book": _book, "fixes": _wrench, "software": _box, "battery": _battery, "link": _link}
+        "camera": _camera, "book": _book, "fixes": _wrench, "battery": _battery, "link": _link}
 
 
 def icon(name: str, color: str, size: int = 20) -> QIcon:

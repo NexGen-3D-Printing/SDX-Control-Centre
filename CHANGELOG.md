@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+- Moved Secure Boot key installation from Software & Updates into **Fixes** as an applicable fix for systems where it is needed.
+- Removed the **Software & Updates** tab and related in-app package install/update/repository flows, which are not applicable to image-based Bazzite (packages are included in the OS image).
+- Updated system checks, first-run setup/tour, and UI text/navigation to reflect the Bazzite workflow.
+
 ## 1.0.1
 
 - Renamed project and all runtime identifiers/assets from `surface-companion` to `sdx-control-centre` / SDX Control Centre (binaries, service, desktop/autostart/icons, D-Bus & polkit IDs, packaging/install scripts) while preserving upstream attribution.

@@ -62,7 +62,7 @@ cp -r SDX-Control-Centre /home/NexGen3D/rpmbuild/SOURCES/
 
 # Create tarball and build
 cd /home/NexGen3D/rpmbuild/SOURCES
-tar czf sdx-control-centre-1.0.1.tar.gz SDX-Control-Centre
+tar czf sdx-control-centre-1.0.2.tar.gz SDX-Control-Centre
 rpmbuild -ba /home/NexGen3D/rpmbuild/SPECS/SDX-Control-Centre.spec
 ```
 

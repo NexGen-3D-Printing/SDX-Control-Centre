@@ -15,7 +15,7 @@ from ..pkg import community, nvidia as nvidia_mod
 from .dialogs import JobDialog, confirm, confirm_risk, notify
 from .welcome import Tour, WelcomeWizard
 from .pages import (BookPage, CameraPage, DisplayPage, FixesPage, LinksPage, OverviewPage, PenPage, PerformancePage,
-                    PowerPage, SoftwarePage, TestPage)
+                    PowerPage, TestPage)
 from .widgets import (Banner, Card, ChoiceGroup, Pill, Row, SliderRow, Sparkline, Toggle, button, label, separator)
 
 POLL_MS = 2500
@@ -26,8 +26,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.backend = backend
         self.state: dict | None = None
-        self.software: dict | None = None
-        self.updates: list = []
         self.history: dict[str, deque] = defaultdict(lambda: deque(maxlen=120))   # ~5 minutes of samples
         self.distro_name = ""
         self.app_name = "SDX Control Centre"
@@ -62,8 +60,7 @@ class MainWindow(QMainWindow):
         specs = [("overview", "home", OverviewPage), ("display", "display", DisplayPage),
                  ("performance", "performance", PerformancePage), ("sleep", "sleep", PowerPage),
                  ("book", "book", BookPage), ("pen", "pen", PenPage), ("camera", "camera", CameraPage),
-                 ("fixes", "fixes", FixesPage), ("links", "link", LinksPage), ("test", "test", TestPage),
-                 ("software", "software", SoftwarePage)]
+                 ("fixes", "fixes", FixesPage), ("links", "link", LinksPage), ("test", "test", TestPage)]
         self.icon_names = {}
         for key, icon, cls in specs:
             page = cls(self)
@@ -149,7 +146,6 @@ class MainWindow(QMainWindow):
         self.backend.daemonChanged.connect(lambda _: self.refresh())
         self.goto("overview")
         self.refresh()
-        self.backend.call("get_software", ok=self._got_software, err=lambda m: None)
         # Get fastfetch system info
         self.fastfetch_info = self.get_system_info()
         self._tray()
@@ -254,7 +250,6 @@ class MainWindow(QMainWindow):
         dlg = WelcomeWizard(self)
         dlg.exec()
         self.refresh()
-        self.backend.call("get_software", ok=self._software_and_page, err=lambda m: None)
         if dlg.want_tour:
             QTimer.singleShot(300, self.start_tour)
 
@@ -320,11 +315,7 @@ class MainWindow(QMainWindow):
         for p in self.pages.values():
             p.mode_changed()
 
-    # -- API used by pages
-    def component(self, cid: str) -> dict | None:
-        if not self.software:
-            return None
-        return next((c for c in self.software["components"] if c["id"] == cid), None)
+    # -- API used by pages (Software tab removed; package components not tracked in UI)
 
     def goto(self, key: str):
         self.nav[key].setChecked(True)
@@ -368,12 +359,6 @@ class MainWindow(QMainWindow):
     def _state_err(self, msg):
         self.status.setText(msg)
 
-    def _got_software(self, d):
-        self.software = d
-        self.distro_name = d["distro"]["name"]
-        if self.state:
-            self.pages[self._current_key()].update_state(self.state)
-
     def _current_key(self):
         return next(k for k, p in self.pages.items() if p is self.stack.currentWidget())
 
@@ -411,7 +396,7 @@ class MainWindow(QMainWindow):
                 ok = confirm(self, "Review installation", "Install the selected software?", steps, "Install")
             if ok:
                 self.run_job("Installing", "install", {"ids": ids, "accept_unsupported": unsupported},
-                             lambda ok, m: self.backend.call("get_software", ok=self._software_and_page))
+                             lambda ok, m: self.refresh())
         self.backend.call("plan_install", {"ids": ids}, ok=got, err=self.toast)
 
     def install_nvidia(self):
@@ -439,7 +424,3 @@ class MainWindow(QMainWindow):
             else:
                 self.run_job("Installing NVIDIA driver", "install_nvidia", {}, lambda ok, m: self.refresh())
         self.backend.call("get_nvidia", ok=got, err=self.toast)
-
-    def _software_and_page(self, d):
-        self._got_software(d)
-        self.pages["software"].render(d)

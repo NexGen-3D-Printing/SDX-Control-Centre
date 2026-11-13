@@ -13,11 +13,9 @@ from .widgets import enable_overlay_scrollbar, Card, Pill, Row, button, label
 
 SCAN_STEPS = [
     ("state", "Identifying your Surface", "get_state"),
-    ("software", "Checking your system and installed software", "get_software"),
     ("kernel", "Looking for the linux-surface kernel", "get_kernel"),
     ("slow", "Checking touch, pen and cameras", "get_slow_state"),
     ("fixes", "Looking for fixes that apply to your model", "get_fixes"),
-    ("updates", "Checking for updates", "check_updates"),
 ]
 
 
@@ -49,11 +47,9 @@ class ScanRow(QWidget):
 
 def summarize(data: dict) -> dict:
     """Turn raw scan data into what the results page shows. Pure function, easy to test."""
-    st, sw, kn = data.get("state") or {}, data.get("software") or {}, data.get("kernel") or {}
+    st, kn = data.get("state") or {}, data.get("kernel") or {}
     slow, fixes = data.get("slow") or {}, data.get("fixes") or []
     dev = st.get("device", {})
-    system = sw.get("system", {})
-    ups = data.get("updates") or {"updates": [], "warnings": []}
     # kernel verdict
     if not kn:
         verdict = "Couldn't look up kernel versions."
@@ -87,38 +83,18 @@ def summarize(data: dict) -> dict:
         feats.append(("Detachable screen", bool(st.get("book", {}).get("dtx"))))
     rec = [f for f in fixes if f["level"] == "recommended" and f["status"] == "available"]
     opt = [f for f in fixes if f["level"] != "recommended" and f["status"] == "available" and f["level"] != "advisory"]
-    return {"dev": dev, "system": system, "kernel": kn, "verdict": verdict, "features": feats,
-            "recommended_fixes": rec, "optional_fixes": opt, "updates": ups["updates"], "warnings": ups["warnings"],
-            "distro": sw.get("distro", {}), "assessment": sw.get("assessment", {"level": "supported", "reasons": []}),
-            "components": sw.get("components", []), "battery": bat, "memory_mb": (st.get("clocks") or {}).get("memory", {}).get("total_mb")}
+    return {"dev": dev, "system": {}, "kernel": kn, "verdict": verdict, "features": feats,
+            "recommended_fixes": rec, "optional_fixes": opt, "updates": [], "warnings": [],
+            "distro": {}, "assessment": {"level": "supported", "reasons": []},
+            "components": [], "battery": bat, "memory_mb": (st.get("clocks") or {}).get("memory", {}).get("total_mb")}
 
 
 def setup_items(summary: dict) -> list[dict]:
-    """What the wizard offers to do. Unsupported systems are never auto-set-up here: they need the full warning."""
+    """What the wizard offers to do now."""
     items = []
     s = summary
-    asm = s["assessment"]["level"]
-    sysd = s["system"]
-    fam = s["distro"].get("family")
-    can = asm == "supported" and fam in ("debian", "fedora", "arch") and not s["distro"].get("immutable")
-    if can and not sysd.get("repo"):
-        items.append({"id": "repo", "title": "Set up the linux-surface repository",
-                      "why": "Needed to find and update Surface kernels and drivers.",
-                      "action": "setup_repo", "args": {}})
-    comps = {c["id"]: c for c in s["components"]}
-    if can and comps.get("kernel", {}).get("installable") and not comps["kernel"].get("installed") and not s["kernel"].get("installed"):
-        ids = [i for i in ("kernel", "iptsd", "libwacom", "secureboot")
-               if comps.get(i, {}).get("installable") and not comps[i].get("installed")]
-        items.append({"id": "install", "title": "Install the linux-surface kernel and touch/pen support",
-                      "why": "Adds drivers for Surface hardware that stock kernels lack.",
-                      "action": "install", "args": {"ids": ids, "accept_unsupported": False}})
-    if can and s["updates"]:
-        items.append({"id": "update", "title": f"Update {len(s['updates'])} Surface package"
-                      + ("s" if len(s["updates"]) != 1 else ""),
-                      "why": ", ".join(u["name"] for u in s["updates"][:4]) + ("…" if len(s["updates"]) > 4 else ""),
-                      "action": "apply_updates", "args": {"pkgs": [u["name"] for u in s["updates"]]}})
-    for f in s["recommended_fixes"]:
-        if f["scope"] == "system" and f["applicable"]:
+    for f in s.get("recommended_fixes", []):
+        if f["scope"] == "system" and f.get("applicable"):
             items.append({"id": "fix-" + f["id"], "title": f["title"], "why": f["summary"],
                           "action": "apply_fix", "args": {"id": f["id"]}})
     return items
@@ -299,23 +275,7 @@ class WelcomeWizard(QDialog):
             self.bar.setValue(i + 1)
             QTimer.singleShot(120, lambda: self._scan_step(i + 1))   # a beat so each step is visible
 
-        if key == "updates":
-            kn = self.data.get("kernel") or {}
-            if not kn.get("repo"):
-                finish(False, {"updates": [], "warnings": []}, "repository not set up")
-                return
-
-            def job_done(ok, msg):
-                if ok:
-                    res = json.loads(msg)
-                    n = len(res["updates"])
-                    finish(True, res, f"{n} available" if n else "up to date")
-                else:
-                    finish(False, {"updates": [], "warnings": [msg]}, "couldn't check")
-            self.b.call(action, ok=lambda r: self.b.track(r["job"], lambda l: None, job_done) if isinstance(r, dict) and "job" in r
-                        else finish(False, None, "needs the background service"),
-                        err=lambda m: finish(False, None, "needs the background service"))
-            return
+        # no special-cased scan steps
         self.b.call(action, ok=lambda r: finish(True, r, self._note(key, r)), err=lambda m: finish(False, None, "unavailable"))
 
     @staticmethod
@@ -401,8 +361,7 @@ class WelcomeWizard(QDialog):
         if not self.items:
             c = Card("Nothing needs setting up")
             if self.summary["assessment"]["level"] != "supported":
-                c.add(label("This system isn't one linux-surface officially supports, so installs aren't offered here. "
-                            "You can still use the Software page, which shows a full warning first.", "muted"))
+                c.add(label("This system isn't one linux-surface officially supports, so automatic setup isn't offered here.", "muted"))
             else:
                 c.add(label("Everything looks good. You can change anything later from the app.", "muted"))
             self.setup_body.addWidget(c)
@@ -494,8 +453,6 @@ def tour_steps(win) -> list[dict]:
         {"target": "test", "title": "System test",
          "text": "Check that everything works: automatic health checks, plus hands-on tests for the keyboard, mouse, "
                  "speakers, ports, camera and detach. Copy the report for a bug report."},
-        {"target": "software", "title": "Software and updates",
-         "text": "Install and update the Surface kernel and drivers. New releases show up here."},
         {"target": "@mode", "title": "Simple or Advanced",
          "text": "Simple shows the essentials. Advanced adds history graphs, every sensor, clock speeds, and more fixes. "
                  "Switch here any time."},

@@ -295,7 +295,6 @@ class OverviewPage(Page):
         self.attention.add_layout(self.attention_list)
         self.body.addWidget(self.attention)
         self._fixes_counts = None
-        self._updates = None
         self._info = None          # Static system info dict (collected once)
         self._info_rendered = False
         self._st = None            # Last device state (used to fill firmware)
@@ -588,11 +587,6 @@ class OverviewPage(Page):
             self.banners.addWidget(Banner(
                 "The background service isn't running, so this window is read-only. Start it with "
                 "“sudo systemctl start sdx-control-centre”, or run the installer again.", "warn"))
-        kernel = self.win.component("kernel")
-        if kernel and kernel.get("installed") and not d["surface_kernel"]:
-            self.banners.addWidget(Banner(
-                "The linux-surface kernel is installed but you're running a different kernel. Pick the surface "
-                "kernel in your boot menu (or set it as default) after a restart.", "warn"))
         self._render_attention()
 
     def _render_attention(self):
@@ -604,14 +598,6 @@ class OverviewPage(Page):
         if self._fixes_counts:
             items.append((f"{len(self._fixes_counts)} recommended fix{'es' if len(self._fixes_counts) != 1 else ''} "
                           "for your model", "fixes"))
-        sw = self.win.software
-        if sw and not sw["system"]["repo"] and any(c["installed"] for c in sw["components"]) \
-                and sw["assessment"]["level"] != "blocked" and sw["distro"]["family"] in ("debian", "fedora", "arch"):
-            items.append(("The Surface update repository isn't set up, so new kernels and drivers won't be found",
-                          "software"))
-        if self.win.updates:
-            items.append((f"{len(self.win.updates)} Surface update{'s' if len(self.win.updates) != 1 else ''} "
-                          "available", "software"))
         if not items:
             self.attention_list.addWidget(label("Everything looks good.", "muted"))
         for text, page in items:
@@ -1486,167 +1472,6 @@ class TestPage(Page):
             self.win.toast(f"Saved to {path}")
 
 
-# ------------------------------------------------------------------------------------------ software
-
-class SoftwarePage(Page):
-    key, title = "software", "Software & Updates"
-    subtitle = "Install the Surface kernel and drivers, and keep them up to date."
-
-    def build(self):
-        self.banner_box = QVBoxLayout()
-        self.body.addLayout(self.banner_box)
-        self.sys = Card("System")
-        self.sys_rows = QVBoxLayout()
-        self.sys.add_layout(self.sys_rows)
-        self.body.addWidget(self.sys)
-
-        self.comp = Card("Drivers and tools")
-        self.comp_rows = QVBoxLayout()
-        self.comp.add_layout(self.comp_rows)
-        self.body.addWidget(self.comp)
-
-        self.upd = Card("Updates")
-        self.upd_text = label("Not checked yet.", "muted")
-        self.upd.add(self.upd_text)
-        r = QHBoxLayout()
-        self.check_btn = button("Check for updates", on_click=self.check)
-        self.update_btn = button("Update all", "primary", self.update_all)
-        self.update_btn.setVisible(False)
-        self.repo_btn = button("Set up repository", "primary", self.setup_repo)
-        self.repo_btn.setVisible(False)
-        r.addWidget(self.repo_btn)
-        r.addWidget(self.check_btn)
-        r.addWidget(self.update_btn)
-        r.addStretch(1)
-        self.upd.add_layout(r)
-        self.body.addWidget(self.upd)
-
-        self.diag = self.adv(Card("Support"))
-        self.diag.add(label("Collect a diagnostics bundle (device info, kernel messages, loaded drivers) to attach "
-                            "to a bug report. Nothing is uploaded.", "muted"))
-        self.diag.add(button("Create diagnostics bundle", on_click=self.diagnostics))
-        self.body.addWidget(self.diag)
-        self.data = None
-
-    def on_show(self):
-        self.b.call("get_software", ok=self.render, err=self.win.toast)
-
-    def render(self, d):
-        self.data = d
-        self.win.software = d
-        for lay in (self.sys_rows, self.comp_rows, self.banner_box):
-            while lay.count():
-                w = lay.takeAt(0).widget()
-                if w:
-                    w.deleteLater()
-        distro, sysd = d["distro"], d["system"]
-        asm = d.get("assessment", {"level": "supported", "reasons": []})
-        if asm["level"] == "unsupported":
-            self.banner_box.addWidget(Banner(
-                "<b>Unsupported system.</b> You can still install the Surface software here, but it is at your own "
-                "risk. You will see a full warning and have to confirm before anything runs.", "bad"))
-        elif asm["level"] == "blocked":
-            self.banner_box.addWidget(Banner("<b>Can't install on this system.</b><br>" + "<br>".join(asm["reasons"]),
-                                             "bad"))
-        if not sysd["repo"] and can_setup and any(c["installed"] for c in d["components"]):
-            self.banner_box.addWidget(Banner(
-                "<b>The linux-surface repository isn't set up.</b> You have Surface packages installed, but this "
-                "system can't see new releases of them. Use “Set up repository” below.", "bad"))
-        if sysd["tlp"]:
-            self.banner_box.addWidget(Banner("TLP is running. The linux-surface project warns it can slow Surface "
-                                             "devices down.", "warn"))
-        self.sys_rows.addWidget(Row("Running kernel", sysd["kernel"],
-                                    Pill("linux-surface" if sysd["surface_kernel"] else "Standard kernel",
-                                         "good" if sysd["surface_kernel"] else "muted")))
-        can_setup = distro["family"] in ("debian", "fedora", "arch") and not distro["immutable"] \
-            and asm["level"] != "blocked"
-        if sysd["repo"]:
-            repo_ctl = Pill("Set up", "good")
-            repo_desc = ""
-        else:
-            repo_ctl = button("Set up repository", "primary", self.setup_repo) if can_setup else Pill("Not set up", "bad")
-            repo_desc = ("Without it, new Surface kernels and drivers can't be found, so updates will never show up. "
-                         + ("The file /etc/apt/sources.list.d/linux-surface.list exists but is empty, which "
-                            "usually happens after a distribution upgrade." if sysd.get("repo_leftover") else ""))
-        self.sys_rows.addWidget(Row("linux-surface repository", repo_desc.strip(), repo_ctl))
-        sb = sysd["secure_boot"]
-        self.sys_rows.addWidget(Row("Secure Boot", "",
-                                    Pill(sb.title(), "good" if sb == "enabled" else "muted")))
-        for c in d["components"]:
-            if not c["installable"] and c["reason"] in ("Only for Surface Book",):
-                continue
-            if c["installed"]:
-                ctl = Pill(f"Installed {c['installed'][:18]}", "good")
-            elif c["installable"]:
-                ctl = button("Install", "primary", lambda cid=c["id"]: self.win.install([cid]))
-            else:
-                ctl = Pill("Unavailable", "muted")
-            self.comp_rows.addWidget(Row(c["title"], c["why"] if c["installable"] or not c["reason"] else c["reason"], ctl))
-        nv = d.get("nvidia") or {}
-        if nv.get("present"):
-            drv = nv.get("loaded")
-            ctl = Pill("Installed", "good") if drv == "nvidia" else button("Install…", "primary", self.win.install_nvidia)
-            self.comp_rows.addWidget(Row("NVIDIA graphics driver",
-                                         "NVIDIA's own driver for the discrete GPU: full speed and CUDA. "
-                                         + ("Currently using the open 'nouveau' driver." if drv == "nouveau" else ""), ctl))
-        row = QHBoxLayout()
-        wrap = QWidget()
-        wrap.setLayout(row)
-        row.setContentsMargins(0, 8, 0, 0)
-        row.addWidget(button("Install everything recommended", on_click=self.install_recommended))
-        row.addStretch(1)
-        self.comp_rows.addWidget(wrap)
-
-    def install_recommended(self):
-        ids = ["kernel", "iptsd", "libwacom", "secureboot"]
-        if self.win.state and self.win.state["device"]["family"] == "book":
-            ids.append("dtx")
-        self.win.install([i for i in ids if i in {c["id"] for c in self.data["components"] if c["installable"] and not c["installed"]}])
-
-    def setup_repo(self):
-        if confirm(self, "Set up the linux-surface repository?",
-                   "This adds the project's package repository and signing key so Surface kernels and drivers can be "
-                   "installed and updated.", "The key is checked against the published fingerprint before it is "
-                   "trusted. You will be asked for your password.", "Set up"):
-            self.win.run_job("Setting up repository", "setup_repo", {},
-                             lambda ok, m: (self.on_show(), self.check() if ok else None))
-
-    def check(self):
-        self.check_btn.setEnabled(False)
-        self.upd_text.setText("Checking...")
-
-        def done(ok, msg):
-            self.check_btn.setEnabled(True)
-            import json
-            res = json.loads(msg) if ok else {"updates": [], "warnings": [msg]}
-            ups, warns = res["updates"], res["warnings"]
-            self.win.updates = ups
-            lines = [f"⚠ {w}" for w in warns]
-            if ups:
-                lines += [f"{u['name']}  {u['installed']} → {u['available']}" for u in ups]
-            elif not warns:
-                lines.append("Everything Surface-related is up to date.")
-            elif ok:
-                lines.append("No updates could be found.")
-            self.upd_text.setText("\n".join(lines))
-            self.update_btn.setVisible(bool(ups))
-            self.repo_btn.setVisible(any("not set up" in w for w in warns))
-        self.b.call("check_updates", ok=lambda r: self.b.track(r["job"], lambda l: None, done) if isinstance(r, dict) and "job" in r else done(True, '{"updates": [], "warnings": []}'),
-                    err=lambda m: done(False, m))
-
-    def update_all(self):
-        pkgs = [u["name"] for u in self.win.updates]
-        detail = ("Updates:\n" + "\n".join(pkgs))
-        if self.data["distro"]["family"] == "arch":
-            detail += "\n\nArch can't update single packages, so the whole system is updated."
-        if confirm(self, "Install updates?", f"{len(pkgs)} package(s) will be updated.", detail, "Update"):
-            self.win.run_job("Updating", "apply_updates", {"pkgs": pkgs}, lambda ok, m: self.check())
-
-    def diagnostics(self):
-        self.win.run_job("Diagnostics", "diagnostics", {},
-                         lambda ok, msg: None)
-
-
 # ------------------------------------------------------------------------------------------ Links
 
 class LinksPage(Page):
@@ -1678,7 +1503,7 @@ class LinksPage(Page):
         sdx = Card()
         sdx.add(label("SDX Control Centre - Surface Device Management", "h3"))
         sdx.add(label("The application you're using right now. A comprehensive tool for managing Surface devices "
-                     "on Bazzite-DX, providing one-click access to system controls, diagnostics, and updates.", "muted"))
+                     "on Bazzite-DX, providing one-click access to system controls and diagnostics.", "muted"))
         sdx.add(button("View on GitHub", "primary", lambda: self.win.run_job("Open", "open_url", 
                    {"url": "https://github.com/NexGen-3D-Printing/sdx-control-centre"})))
         self.body.addWidget(sdx)

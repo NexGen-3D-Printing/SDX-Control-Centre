@@ -13,6 +13,7 @@ from pathlib import Path
 from .. import sysfs
 from ..device import REBOOT_PCI_MODELS, MARVELL_MODELS, INTEL_12TH, PINCTRL_ICELAKE, PINCTRL_TIGERLAKE
 from ..hw import camera as hwcamera
+from ..pkg import catalog as pkg_catalog, distro as pkg_distro, planner as pkg_planner
 from . import bootloader
 from .base import Ctx, Fix, Log, is_managed, remove_managed, sh, write_managed
 
@@ -467,6 +468,57 @@ def _ipu3_apply(ctx: Ctx, log: Log) -> None:
         raise RuntimeError("Install the IPU3 firmware (ipu3-fw.bin) for your distribution")
 
 
+# ------------------------------------------------------------------ Secure Boot key (linux-surface)
+
+def _secureboot_component():
+    try:
+        return pkg_catalog.by_id("secureboot")
+    except Exception:
+        return None
+
+
+def _secureboot_applicable(ctx: Ctx) -> bool:
+    c = _secureboot_component()
+    if c is None or not ctx.dev.is_surface:
+        return False
+    ok, _ = pkg_planner.applicable(c, ctx.dev, ctx.distro)
+    return ok
+
+
+def _secureboot_detect(ctx: Ctx) -> str:
+    c = _secureboot_component()
+    if c is None:
+        return "not-needed"
+    pkg = c.check_pkg.get(ctx.distro.family)
+    if not pkg:
+        return "available"
+    return "applied" if pkg_distro.installed_version(ctx.distro, pkg) else "available"
+
+
+def _secureboot_note(ctx: Ctx) -> str:
+    sb = (sysfs.run(["mokutil", "--sb-state"]).stdout or "")
+    if "disabled" in sb:
+        return "Secure Boot is currently off, so the key is not required yet. If you enable Secure Boot later, install and enrol this key so the linux-surface kernel can boot."
+    return "You will enrol the key on the next boot (password: surface)."
+
+
+def _secureboot_apply(ctx: Ctx, log: Log) -> None:
+    assessment = pkg_planner.assess(ctx.dev, ctx.distro).get("level")
+    if assessment == "blocked":
+        raise RuntimeError("Installing the Secure Boot key package is not supported automatically on this system.")
+    if assessment == "unsupported":
+        raise RuntimeError("This system requires a reviewed/manual install flow for Surface packages. Use the documented package install method for your system.")
+    plan = pkg_planner.plan_install(["secureboot"], ctx.dev, ctx.distro)
+    if plan.blockers:
+        raise RuntimeError("; ".join(plan.blockers))
+    if not plan.steps:
+        log("Secure Boot key package is already installed or not needed.")
+        return
+    if not pkg_planner.run_plan(plan, log):
+        raise RuntimeError("Installing the Secure Boot key did not complete")
+    return None
+
+
 # ------------------------------------------------------------------ the catalogue
 
 def build() -> list[Fix]:
@@ -533,6 +585,14 @@ def build() -> list[Fix]:
             applies=lambda c: surface(c) and _ipu3(c),
             detect=lambda c: "applied" if _ipu3_have(c) else "available",
             apply=_ipu3_apply, reboot=True),
+        Fix("secureboot-key", "Secure Boot key for the linux-surface kernel",
+            "Installs the linux-surface Secure Boot key package so Secure Boot can accept the linux-surface kernel. "
+            "On Bazzite/image-based systems this is usually included in the image and not required separately.",
+            "Boot", "https://github.com/linux-surface/linux-surface/wiki/Secure-Boot", "recommended",
+            applies=_secureboot_applicable,
+            detect=_secureboot_detect, apply=_secureboot_apply, reboot=True,
+            recommend=lambda c: "enabled" in (sysfs.run(["mokutil", "--sb-state"]).stdout or ""),
+            note=_secureboot_note),
         # --- advisories: real issues the wiki documents but that cannot be fixed safely from software
         Fix("s5-shutdown", "Shutdown does not power off (12th gen Intel)",
             "On this generation a normal shutdown can leave the device on. The workaround boots a tiny EFI "

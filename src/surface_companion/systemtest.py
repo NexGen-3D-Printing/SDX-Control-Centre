@@ -45,7 +45,7 @@ def c_kernel(x: Ctx):
         return _r("kernel", t, "ok", f"Running linux-surface {x.dev.kernel}.")
     return _r("kernel", t, "warn", f"Running the standard kernel {x.dev.kernel}. Many Surface features work, but some "
                                     "(touch, newer models, cameras) may be limited.",
-              "Install the linux-surface kernel from Software & Updates.", "software")
+              "A linux-surface kernel is usually required for full Surface hardware support on this model.")
 
 
 def c_sam(x: Ctx):
@@ -60,7 +60,7 @@ def c_sam(x: Ctx):
         return _r("sam", t, "warn", "The driver is loaded but no devices attached.",
                   "Some older Surface models have no Surface Aggregator. Otherwise try the linux-surface kernel.")
     return _r("sam", t, "warn", "The Surface Aggregator driver isn't loaded. Older models (Surface 3, Pro 3) don't have one.",
-              "Install the linux-surface kernel if your model is newer.", "software")
+              "The linux-surface kernel is usually required for Surface hardware support on newer models.")
 
 
 def c_input(x: Ctx):
@@ -106,7 +106,7 @@ def c_perf(x: Ctx):
     if p.get("available"):
         return _r("perf", t, "ok", f"Available ({len(p['choices'])} profiles), currently {p['current']}.")
     return _r("perf", t, "warn", "The kernel doesn't expose a performance profile.",
-              "The linux-surface kernel provides it on most models.", "software")
+              "The linux-surface kernel provides performance profiles on most models.")
 
 
 def c_battery(x: Ctx):
@@ -163,7 +163,7 @@ def c_kernel_errors(x: Ctx):
         return _r("kerrors", t, "ok", "No Surface driver errors this boot.")
     who = re.match(r"\s*([A-Za-z_]+)", bad[0])
     detail = f"{len(bad)} driver message(s) mention errors" + (f" (first from {who.group(1)})" if who else "") + f": {bad[0][:140]}"
-    hint = "If something isn't working, export the diagnostics bundle from Software & Updates and report it."
+    hint = "If something isn't working, collect diagnostics and report it with your issue."
     if len(bad) >= 25:
         return _r("kerrors", t, "fail", detail, hint)
     return _r("kerrors", t, "warn", detail, hint)
@@ -233,13 +233,13 @@ def c_secureboot(x: Ctx):
     if not sysfs.p(cer).exists():
         return _r("secureboot", t, "ok" if x.dev.surface_kernel else "warn",
                   "Secure Boot is on." + ("" if x.dev.surface_kernel else " The linux-surface key package isn't installed."),
-                  "" if x.dev.surface_kernel else "Install the Secure Boot key from Software & Updates.",
-                  None if x.dev.surface_kernel else "software")
+                  "" if x.dev.surface_kernel else "Install the Secure Boot key from the Fixes page (if applicable on your system).",
+                  None if x.dev.surface_kernel else "fixes")
     r = sysfs.run(["mokutil", "--test-key", cer])
     if "already enrolled" in (r.stdout + r.stderr):
         return _r("secureboot", t, "ok", "Secure Boot is on and the linux-surface key is enrolled.")
     return _r("secureboot", t, "warn", "Secure Boot is on but the linux-surface key isn't enrolled, so that kernel won't boot.",
-              "Restart and complete the key screen (password: surface).", "software")
+              "Restart and complete the key screen (password: surface).", "fixes")
 
 
 def c_repo(x: Ctx):
@@ -248,8 +248,8 @@ def c_repo(x: Ctx):
         return _r("repo", t, "skip", "Not applicable on this distribution.")
     if planner.repo_present(x.distro):
         return _r("repo", t, "ok", "The linux-surface repository is set up.")
-    return _r("repo", t, "warn", "The linux-surface repository isn't set up, so new kernels and drivers can't be found.",
-              "Set it up from Software & Updates.", "software")
+    return _r("repo", t, "warn", "The linux-surface repository isn't set up.",
+              "On Bazzite/image-based systems required Surface packages are usually included in the OS image.")
 
 
 def c_disk(x: Ctx):
@@ -281,7 +281,7 @@ def c_dgpu(x: Ctx):
     if g.get("driver"):
         return _r("dgpu", t, "ok", f"Using the {g['driver']} driver; power state {g.get('power_state') or '?'}.")
     return _r("dgpu", t, "warn", "A discrete GPU is present but no driver is bound to it.",
-              "Install the NVIDIA driver from Surface Book or Software & Updates.", "software")
+              "Install the NVIDIA driver from the Surface Book page if needed.")
 
 
 CHECKS: list[tuple[str, Callable[[Ctx], dict]]] = [
